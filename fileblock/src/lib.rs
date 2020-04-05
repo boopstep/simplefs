@@ -1,2 +1,2 @@
-mod emulator;
 mod blockio;
+pub mod emulator;

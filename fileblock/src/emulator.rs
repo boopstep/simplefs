@@ -1,14 +1,14 @@
 use crate::blockio::{BlockNumber, BlockStorage};
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
-use std::io::{ErrorKind, SeekFrom};
-use std::path::PathBuf;
+use std::io::{BufWriter, ErrorKind, SeekFrom};
+use std::path::Path;
 
 /// 4k is a common block size for file systems. Disks commonly are composed of
 /// 512 byte blocks mapping each file system block to 8 hard disk blocks.
 static BLOCK_SIZE_BYTES: usize = 4096;
 
-struct FileBlockEmulator {
+pub struct FileBlockEmulator {
     /// The file must be a fixed-size file some exact multiple of the size of a block.
     fd: File,
     /// The total number of blocks available in the file store.
@@ -25,12 +25,12 @@ impl FileBlockEmulator {
 }
 
 impl BlockStorage for FileBlockEmulator {
-    fn open_disk(dest: &PathBuf, nblocks: usize) -> std::io::Result<Self>
+    fn open_disk<P: AsRef<Path>>(dest: P, nblocks: usize) -> std::io::Result<Self>
     where
         Self: std::marker::Sized,
     {
-        // Do not create if the file does not exist.
-        let file = OpenOptions::new().write(true).create_new(true).open(dest)?;
+        // Return error if the file does not exist rather than create one.
+        let file = OpenOptions::new().write(true).open(dest)?;
         let emu = FileBlockEmulator {
             fd: file,
             block_count: nblocks,
@@ -43,7 +43,7 @@ impl BlockStorage for FileBlockEmulator {
         if blocknr > (self.block_count - 1) {
             return Err(std::io::Error::new(
                 ErrorKind::InvalidInput,
-                "block requested exceeds filesystem upper bound",
+                "block out of range",
             ));
         }
 
@@ -53,42 +53,34 @@ impl BlockStorage for FileBlockEmulator {
                 "buffer does not contain enough space to read block",
             ));
         }
-        // FIXME(allancalix): Keep a seek pointer in file descriptor to avoid
-        // having to seek from start each time.
         self.fd
             .seek(SeekFrom::Start((blocknr * BLOCK_SIZE_BYTES) as u64))?;
 
-        // IO reads enough bytes to fill the buffer it receives. In order to limit
-        // the number of bytes to one block we allocate a fixed sized buffer to fill.
-        let mut fixed_block = vec![0; BLOCK_SIZE_BYTES];
-        let bytes_read = self.fd.read(fixed_block.as_mut_slice())?;
+        let fd = &mut self.fd;
+        // Limit the read to just the block specified.
+        let mut fixed_reader = fd.take(BLOCK_SIZE_BYTES as u64);
+        let bytes_read = fixed_reader.read(buf)?;
         debug_assert!(bytes_read == BLOCK_SIZE_BYTES);
-
-        buf.copy_from_slice(&fixed_block);
         Ok(())
     }
-
+    /// This method truncates writes that exceed the total block size.
     fn write_block(&mut self, blocknr: BlockNumber, buf: &mut [u8]) -> std::io::Result<()> {
         if blocknr > (self.block_count - 1) {
             return Err(std::io::Error::new(
                 ErrorKind::InvalidInput,
-                "block requested exceeds filesystem upper bound",
-            ));
-        }
-
-        if buf.len() < BLOCK_SIZE_BYTES {
-            return Err(std::io::Error::new(
-                ErrorKind::InvalidInput,
-                "buffer does not contain enough space to read block",
+                "block out of range",
             ));
         }
         self.fd
             .seek(SeekFrom::Start((blocknr * BLOCK_SIZE_BYTES) as u64))?;
 
-        let mut fixed_block = vec![0x00; BLOCK_SIZE_BYTES];
-        fixed_block.copy_from_slice(buf);
-        let bytes_written = self.fd.write(fixed_block.as_mut_slice())?;
-        debug_assert!(bytes_written == BLOCK_SIZE_BYTES);
+        let max = if BLOCK_SIZE_BYTES < buf.len() {
+            BLOCK_SIZE_BYTES
+        } else {
+            buf.len()
+        };
+        let bytes_written = self.fd.write(&buf[0..max])?;
+        debug_assert!(bytes_written == max);
         Ok(())
     }
 
@@ -98,7 +90,7 @@ impl BlockStorage for FileBlockEmulator {
     }
 }
 
-struct FileBlockEmulatorBuilder {
+pub struct FileBlockEmulatorBuilder {
     fd: File,
     block_count: usize,
 }
@@ -135,12 +127,11 @@ impl FileBlockEmulatorBuilder {
     }
 
     fn zero_block(&mut self) -> std::io::Result<()> {
-        let total_bytes = self.block_count * BLOCK_SIZE_BYTES;
-        let bytes_written = self
-            .fd
-            // FIXME(allancalix): Clean up heap allocation.
-            .write(vec![0x00; total_bytes].as_slice())?;
-        debug_assert!(bytes_written == self.block_count * BLOCK_SIZE_BYTES);
+        let mut bfd = BufWriter::new(&self.fd);
+        // Zero out the "disk" block, buffering each write to prevent excessive reads.
+        for _ in 0..self.block_count {
+            bfd.write(vec![0x00; BLOCK_SIZE_BYTES].as_slice())?;
+        }
         Ok(())
     }
 }
@@ -148,7 +139,6 @@ impl FileBlockEmulatorBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn file_emulator_allocates_correct_num_bytes() {
@@ -157,8 +147,6 @@ mod tests {
             .with_block_size(4)
             .build()
             .expect("failed to allocate file block");
-        // let mut disk_emu =
-        //     FileBlockEmulator::from(fs_block, 4).expect("failed to allocate file block");
         disk_emu.sync_disk().unwrap();
         assert_eq!(disk_emu.into_file().metadata().unwrap().len(), 4 * 4096);
     }
@@ -166,8 +154,6 @@ mod tests {
     #[test]
     fn can_read_and_write_blocks() {
         let fs_block = tempfile::tempfile().unwrap();
-        // let mut disk_emu =
-        //     FileBlockEmulator::from(fs_block, 4).expect("failed to allocate file block");
         let mut disk_emu = FileBlockEmulatorBuilder::from(fs_block)
             .with_block_size(4)
             .build()
@@ -193,8 +179,6 @@ mod tests {
     #[test]
     fn can_read_and_write_start_and_end_blocks() {
         let fs_block = tempfile::tempfile().unwrap();
-        // let mut disk_emu =
-        //     FileBlockEmulator::from(fs_block, 4).expect("failed to allocate file block");
         let mut disk_emu = FileBlockEmulatorBuilder::from(fs_block)
             .with_block_size(2)
             .build()
@@ -238,5 +222,22 @@ mod tests {
             Ok(_) => assert!(false, "expected an error"),
             Err(_) => (),
         }
+    }
+
+    #[test]
+    fn writing_to_block_with_block_size_lt_max_succeeds() {
+        let fs_block = tempfile::tempfile().unwrap();
+        // let mut disk_emu =
+        //     FileBlockEmulator::from(fs_block, 4).expect("failed to allocate file block");
+        let mut disk_emu = FileBlockEmulatorBuilder::from(fs_block)
+            .with_block_size(1)
+            .build()
+            .expect("failed to allocate file block");
+        disk_emu.sync_disk().unwrap();
+
+        // Fill half the block with meaningful data.
+        let mut block = vec![0x55; 2048];
+        disk_emu.write_block(0, block.as_mut_slice()).expect("failed to write block");
+        disk_emu.sync_disk().unwrap();
     }
 }
