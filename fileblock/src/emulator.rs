@@ -130,7 +130,7 @@ impl FileBlockEmulatorBuilder {
         let mut bfd = BufWriter::new(&self.fd);
         // Zero out the "disk" block, buffering each write to prevent excessive reads.
         for _ in 0..self.block_count {
-            bfd.write(vec![0x00; BLOCK_SIZE_BYTES].as_slice())?;
+            bfd.write_all(vec![0x00; BLOCK_SIZE_BYTES].as_slice())?;
         }
         Ok(())
     }
@@ -218,10 +218,7 @@ mod tests {
         // Attempt to write beyond range.
         let mut block = vec![0x55; 4096];
         let wresult = disk_emu.write_block(1, block.as_mut_slice());
-        match wresult {
-            Ok(_) => assert!(false, "expected an error"),
-            Err(_) => (),
-        }
+        if wresult.is_ok() { panic!("expected an error, got result instead") }
     }
 
     #[test]
