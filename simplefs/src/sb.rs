@@ -16,17 +16,17 @@ const SB_MAGIC: u32 = 0x53465342;
 #[derive(Debug, PartialEq)]
 pub struct SuperBlock {
     /// A 32-bit identifying string, in this case SFSB.
-    sb_magic: u32,
+    pub sb_magic: u32,
     /// Assuming 256 bytes per inode a 4K block can hold 16 inodes.
-    inodes_count: u32,
+    pub inodes_count: u32,
     /// All the remaining blocks are allocating to storing user data.
-    blocks_count: u32,
+    pub blocks_count: u32,
     /// All blocks currently in use by the filesystem.
-    reserved_blocks_count: u32,
+    pub reserved_blocks_count: u32,
     /// All blocks available to be allocated by the system.
-    free_blocks_count: u32,
+    pub free_blocks_count: u32,
     /// The number of remaining available inodes.
-    free_inodes_count: u32,
+    pub free_inodes_count: u32,
 }
 
 impl SuperBlock {

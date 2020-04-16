@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 /// Keeps track of free vs allocated memory blocks with a space efficient bitmap
 /// representation.
 
@@ -20,6 +21,28 @@ pub struct BitmapBlock {
 impl BitmapBlock {
     pub fn new() -> Self {
         Self { bitmap: [0;BLOCK_SIZE] }
+    }
+
+    pub fn from(buf: &[u8]) -> Self {
+        assert_eq!(buf.len(), BLOCK_SIZE * 8);
+
+        let bitmap: Vec<u64> = buf
+            .chunks(8)
+            .map(|v| u64::from_be_bytes(v.try_into().unwrap()))
+            .collect();
+
+        let mut decoded_block = [0;BLOCK_SIZE];
+        decoded_block.copy_from_slice(&bitmap);
+        Self { bitmap: decoded_block }
+    }
+
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut encoded_buf = vec!();
+
+        for &b in self.bitmap.iter() {
+            encoded_buf.extend_from_slice(&b.to_be_bytes());
+        }
+        encoded_buf
     }
 
     pub fn get_state(&self, blocknr: usize) -> State {
@@ -92,5 +115,22 @@ mod tests {
 
         bmp.set_free(10);
         assert_eq!(bmp.get_state(10), State::Free);
+    }
+
+    #[test]
+    fn can_serialize_and_deserialize_state() {
+        let mut bmp = BitmapBlock::new();
+        bmp.set_used(10);
+        bmp.set_used(11);
+        bmp.set_used(12);
+
+        let read_bmp = BitmapBlock::from(&bmp.serialize());
+        // This is a dumb way of testing equality between two arrays of different
+        // lengths. I can't derive debug for the arrays because they exceed the max
+        // trait implementation limit, see: https://doc.rust-lang.org/std/primitive.array.html.
+        bmp.bitmap.iter().zip(read_bmp.bitmap.iter()).all(|(a, b)| {
+            assert_eq!(a, b);
+            true
+        });
     }
 }
