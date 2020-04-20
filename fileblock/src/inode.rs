@@ -11,7 +11,7 @@ enum FileType {
 struct Inode {
     inumber: u32,
     ftype: FileType,
-    fsize: u64,
-    block_location_id: u32,
+    fsize: u32,
+    block_location_ids: [u32;],
     uid: u16 // owner
 }
