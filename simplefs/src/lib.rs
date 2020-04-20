@@ -9,7 +9,7 @@ use crate::sb::SuperBlock;
 use emulator::FileBlockEmulator;
 use std::fs::File;
 
-const SB_MAGIC: u32 = 0x53465342; // SFSB
+const SB_MAGIC: u32 = 0x5346_5342; // SFSB
 
 /// A fixed 64 4k block file system. Currently hard coded for simplicity with
 /// one super block, one inode bitmap, one data block bitmap, five inode blocks,
@@ -19,6 +19,7 @@ pub struct SFS<T: BlockStorage> {
     super_block: SuperBlock,
     inode_bmp: alloc::BitmapBlock,
     data_bmp: alloc::BitmapBlock,
+    // TODO(allancalix): inode structure.
 }
 
 impl SFS<emulator::FileBlockEmulator> {

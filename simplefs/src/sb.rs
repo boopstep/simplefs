@@ -42,25 +42,32 @@ impl SuperBlock {
     /// Reads a the super block from a buffer of of exactly size BLOCK_SIZE. Passing
     /// a slice of any other size will result in a panic.
     pub fn parse(buf: &[u8], magic: u32) -> Self {
-        assert_eq!(buf.len(), BLOCK_SIZE, "Length of buffer to parse must equal block size.");
+        assert_eq!(
+            buf.len(),
+            BLOCK_SIZE,
+            "Length of buffer to parse must equal block size."
+        );
         let mut sb = Self::new();
         sb.sb_magic = magic;
 
         let read_magic = u32::from_be_bytes(buf[0..4].try_into().unwrap());
-        assert_eq!(read_magic, sb.sb_magic, "Superblock magic constant invalid.");
+        assert_eq!(
+            read_magic, sb.sb_magic,
+            "Superblock magic constant invalid."
+        );
 
         sb.inodes_count = u32::from_be_bytes(buf[4..8].try_into().unwrap());
         sb.blocks_count = u32::from_be_bytes(buf[8..12].try_into().unwrap());
         sb.reserved_blocks_count = u32::from_be_bytes(buf[12..16].try_into().unwrap());
         sb.free_blocks_count = u32::from_be_bytes(buf[16..20].try_into().unwrap());
         sb.free_inodes_count = u32::from_be_bytes(buf[20..24].try_into().unwrap());
-        return sb
+        sb
     }
 
     /// Serializes the SuperBlock into a BLOCK_SIZE buffer for writing to disk.
     /// The encoding is a series of struct fields with big endian alignment.
     pub fn serialize(&self) -> Vec<u8> {
-        let mut sb_encoded = vec!();
+        let mut sb_encoded = vec![];
         sb_encoded.extend_from_slice(&self.sb_magic.to_be_bytes());
         sb_encoded.extend_from_slice(&self.inodes_count.to_be_bytes());
         sb_encoded.extend_from_slice(&self.blocks_count.to_be_bytes());
@@ -69,7 +76,7 @@ impl SuperBlock {
         sb_encoded.extend_from_slice(&self.free_inodes_count.to_be_bytes());
         // FIXME(allancalix): This is lazy coding to try and append bytes to the
         // end of this buffer to fill a fixed space.
-        sb_encoded.extend_from_slice(&[0;4072]);
+        sb_encoded.extend_from_slice(&[0; 4072]);
         sb_encoded
     }
 }
@@ -96,14 +103,14 @@ mod tests {
     #[test]
     #[should_panic(expected = "Superblock magic constant invalid.")]
     fn parsing_buffer_with_invalid_magic_panics() {
-        let zero_buffer_with_right_size = vec![0;4096];
+        let zero_buffer_with_right_size = vec![0; 4096];
         SuperBlock::parse(&zero_buffer_with_right_size, TEST_MAGIC);
     }
 
     #[test]
     #[should_panic]
     fn parsing_buffer_with_invalid_size_panics() {
-        let wrong_size_buffer = vec![0;512];
+        let wrong_size_buffer = vec![0; 512];
         SuperBlock::parse(&wrong_size_buffer, TEST_MAGIC);
     }
 }
