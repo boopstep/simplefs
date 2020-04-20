@@ -3,7 +3,7 @@ use std::convert::TryInto;
 /// representation.
 
 // TODO(allancalix): Replace hard coded block size with a parameter.
-const BLOCK_SIZE: usize = 4096 / 64;
+const BLOCK_SIZE: usize = 4096 / 8;
 
 #[derive(Debug, PartialEq)]
 pub enum State {
@@ -46,6 +46,7 @@ impl BitmapBlock {
         for &b in self.bitmap.iter() {
             encoded_buf.extend_from_slice(&b.to_be_bytes());
         }
+        assert_eq!(encoded_buf.len(), 4096);
         encoded_buf
     }
 

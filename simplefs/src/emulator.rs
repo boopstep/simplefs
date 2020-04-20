@@ -10,9 +10,9 @@ static BLOCK_SIZE_BYTES: usize = 4096;
 
 pub struct FileBlockEmulator {
     /// The file must be a fixed-size file some exact multiple of the size of a block.
-    fd: File,
+    pub fd: File,
     /// The total number of blocks available in the file store.
-    block_count: usize,
+    pub block_count: usize,
 }
 
 /// Emulates block disk/flash storage in userspace using a file as block storage.
