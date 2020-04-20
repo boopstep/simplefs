@@ -20,7 +20,9 @@ pub struct BitmapBlock {
 
 impl BitmapBlock {
     pub fn new() -> Self {
-        Self { bitmap: [0;BLOCK_SIZE] }
+        Self {
+            bitmap: [0; BLOCK_SIZE],
+        }
     }
 
     pub fn from(buf: &[u8]) -> Self {
@@ -31,13 +33,15 @@ impl BitmapBlock {
             .map(|v| u64::from_be_bytes(v.try_into().unwrap()))
             .collect();
 
-        let mut decoded_block = [0;BLOCK_SIZE];
+        let mut decoded_block = [0; BLOCK_SIZE];
         decoded_block.copy_from_slice(&bitmap);
-        Self { bitmap: decoded_block }
+        Self {
+            bitmap: decoded_block,
+        }
     }
 
     pub fn serialize(&self) -> Vec<u8> {
-        let mut encoded_buf = vec!();
+        let mut encoded_buf = vec![];
 
         for &b in self.bitmap.iter() {
             encoded_buf.extend_from_slice(&b.to_be_bytes());

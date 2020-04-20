@@ -218,7 +218,9 @@ mod tests {
         // Attempt to write beyond range.
         let mut block = vec![0x55; 4096];
         let wresult = disk_emu.write_block(1, block.as_mut_slice());
-        if wresult.is_ok() { panic!("expected an error, got result instead") }
+        if wresult.is_ok() {
+            panic!("expected an error, got result instead")
+        }
     }
 
     #[test]
@@ -234,7 +236,9 @@ mod tests {
 
         // Fill half the block with meaningful data.
         let mut block = vec![0x55; 2048];
-        disk_emu.write_block(0, block.as_mut_slice()).expect("failed to write block");
+        disk_emu
+            .write_block(0, block.as_mut_slice())
+            .expect("failed to write block");
         disk_emu.sync_disk().unwrap();
     }
 }
