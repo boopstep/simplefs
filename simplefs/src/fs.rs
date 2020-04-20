@@ -1,5 +1,6 @@
 use std::fs::File;
 use std::path::Path;
+use thiserror::Error;
 
 use crate::emulator::{FileBlockEmulator, FileBlockEmulatorBuilder};
 use crate::alloc::BitmapBlock;
@@ -8,6 +9,11 @@ use crate::sb::SuperBlock;
 
 const SB_MAGIC: u32 = 0x5346_5342; // SFSB
 
+#[derive(Error, Debug)]
+pub enum SFSError {
+  #[error("invalid file system block layout")]
+  InvalidBlock(#[from] std::io::Error),
+}
 /// A fixed 64 4k block file system. Currently hard coded for simplicity with
 /// one super block, one inode bitmap, one data block bitmap, five inode blocks,
 /// and 56 blocks for data storage.
@@ -21,7 +27,7 @@ pub struct SFS<T: BlockStorage> {
 
 impl SFS<FileBlockEmulator> {
     /// Initializes the file system onto owned block storage.
-    pub fn create(dev: File, blocks: usize) -> Result<Self, std::io::Error> {
+    pub fn create(dev: File, blocks: usize) -> Result<Self, SFSError> {
         let mut emu = FileBlockEmulatorBuilder::from(dev)
             .with_block_size(blocks)
             .build()
@@ -42,7 +48,7 @@ impl SFS<FileBlockEmulator> {
         })
     }
 
-    pub fn open<P: AsRef<Path>>(disk: P, blocknr: usize) -> Result<Self, std::io::Error> {
+    pub fn open<P: AsRef<Path>>(disk: P, blocknr: usize) -> Result<Self, SFSError> {
         let mut emu = FileBlockEmulator::open_disk(&disk, blocknr)?;
         let mut block_buf = vec![0; 4096];
 
