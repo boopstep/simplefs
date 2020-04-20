@@ -6,6 +6,7 @@ mod sb;
 use crate::alloc::BitmapBlock;
 use crate::blockio::BlockStorage;
 use crate::sb::SuperBlock;
+use emulator::FileBlockEmulator;
 use std::fs::File;
 
 const SB_MAGIC: u32 = 0x53465342; // SFSB
@@ -32,14 +33,37 @@ impl SFS<emulator::FileBlockEmulator> {
         let data_bmp = BitmapBlock::new();
 
         emu.write_block(0, &mut sb.serialize())?;
-        emu.write_block(1, &mut inode_bmp.serialize()[0..4096])?;
-        emu.write_block(2, &mut data_bmp.serialize()[0..4096])?;
+        emu.write_block(1, &mut data_bmp.serialize()[0..4096])?;
+        emu.write_block(2, &mut inode_bmp.serialize()[0..4096])?;
 
         Ok(SFS {
             dev: emu,
             super_block: sb,
             inode_bmp: BitmapBlock::new(),
             data_bmp: BitmapBlock::new(),
+        })
+    }
+
+    pub fn open(disk: &str, blocknr: usize) -> Result<Self, std::io::Error> {
+        let mut emu = FileBlockEmulator::open_disk(&disk, blocknr)?;
+        let mut block_buf = vec![0; 4096];
+
+        // Read superblock from first block;
+        emu.read_block(0, &mut block_buf)?;
+        let super_block = SuperBlock::parse(&block_buf, SB_MAGIC);
+
+        // Read inode bitmap from second block;
+        emu.read_block(1, &mut block_buf)?;
+        let data_bmp = BitmapBlock::from(&block_buf);
+
+        emu.read_block(2, &mut block_buf)?;
+        let inode_bmp = BitmapBlock::from(&block_buf);
+
+        Ok(Self {
+            dev: emu,
+            super_block,
+            inode_bmp,
+            data_bmp,
         })
     }
 

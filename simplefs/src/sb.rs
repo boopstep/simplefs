@@ -2,8 +2,6 @@ use std::convert::TryInto;
 
 const BLOCK_SIZE: usize = 4096;
 
-const SB_MAGIC: u32 = 0x53465342;
-
 /// The first block of the file system storing information critical for mounting
 /// the file system and verifying the underlying disk is formatted correctly.
 ///
@@ -32,7 +30,7 @@ pub struct SuperBlock {
 impl SuperBlock {
     pub fn new() -> Self {
         Self {
-            sb_magic: SB_MAGIC, // SFSB
+            sb_magic: 0, // Invalid zero value by default.
             inodes_count: 0,
             blocks_count: 0,
             reserved_blocks_count: 0,
@@ -43,9 +41,10 @@ impl SuperBlock {
 
     /// Reads a the super block from a buffer of of exactly size BLOCK_SIZE. Passing
     /// a slice of any other size will result in a panic.
-    pub fn parse(buf: &[u8]) -> Self {
+    pub fn parse(buf: &[u8], magic: u32) -> Self {
         assert_eq!(buf.len(), BLOCK_SIZE, "Length of buffer to parse must equal block size.");
         let mut sb = Self::new();
+        sb.sb_magic = magic;
 
         let read_magic = u32::from_be_bytes(buf[0..4].try_into().unwrap());
         assert_eq!(read_magic, sb.sb_magic, "Superblock magic constant invalid.");
@@ -79,14 +78,17 @@ impl SuperBlock {
 mod tests {
     use super::*;
 
+    const TEST_MAGIC: u32 = 0x4EEE; // non-zero superblock value.
+
     #[test]
     fn can_encode_and_decode_superblocks() {
         let mut sb = SuperBlock::new();
+        sb.sb_magic = TEST_MAGIC; // non-zero superblock value.
         sb.inodes_count = 5;
         sb.blocks_count = 56;
         let encoded = sb.serialize();
 
-        let parsed = SuperBlock::parse(&encoded[0..4096]);
+        let parsed = SuperBlock::parse(&encoded[0..4096], TEST_MAGIC);
 
         assert_eq!(parsed, sb);
     }
@@ -95,13 +97,13 @@ mod tests {
     #[should_panic(expected = "Superblock magic constant invalid.")]
     fn parsing_buffer_with_invalid_magic_panics() {
         let zero_buffer_with_right_size = vec![0;4096];
-        SuperBlock::parse(&zero_buffer_with_right_size);
+        SuperBlock::parse(&zero_buffer_with_right_size, TEST_MAGIC);
     }
 
     #[test]
     #[should_panic]
     fn parsing_buffer_with_invalid_size_panics() {
         let wrong_size_buffer = vec![0;512];
-        SuperBlock::parse(&wrong_size_buffer);
+        SuperBlock::parse(&wrong_size_buffer, TEST_MAGIC);
     }
 }
