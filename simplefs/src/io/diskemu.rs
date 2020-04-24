@@ -1,4 +1,4 @@
-use crate::blockio::{BlockNumber, BlockStorage};
+use super::block::{BlockNumber, BlockStorage};
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
 use std::io::{BufWriter, ErrorKind, SeekFrom};

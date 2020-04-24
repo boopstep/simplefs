@@ -2,8 +2,7 @@ use std::fs::File;
 use std::path::Path;
 use thiserror::Error;
 
-use crate::emulator::{FileBlockEmulator, FileBlockEmulatorBuilder};
-use crate::blockio::BlockStorage;
+use crate::io::{BlockStorage, FileBlockEmulator, FileBlockEmulatorBuilder};
 use crate::sb::SuperBlock;
 
 const SB_MAGIC: u32 = 0x5346_5342; // SFSB
