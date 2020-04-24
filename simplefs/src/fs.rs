@@ -6,6 +6,7 @@ use crate::io::BlockStorage;
 use crate::sb::SuperBlock;
 
 use thiserror::Error;
+use zerocopy::{AsBytes, FromBytes};
 
 pub const BLOCK_SIZE: usize = 4096;
 
@@ -13,6 +14,12 @@ const SB_MAGIC: u32 = 0x5346_5342; // SFSB
 
 const NODE_SIZE: usize = 256;
 
+const FT_UNKNOWN: u8 = 0;
+const FT_FILE: u8 = 1;
+const FT_DIR: u8 = 2;
+
+#[repr(packed)]
+#[derive(AsBytes, FromBytes)]
 pub struct Inode {
     /// The absolute postition of the inode in the filesystem.
     inumber: u32,
@@ -26,9 +33,22 @@ pub struct Inode {
     gid: u16,
     /// Pointers for the data blocks that belong to the file. Uses the remaining
     /// space the 256 inode space.
-    blocks: [u32; NODE_SIZE - 102],
+    blocks: [u32; (NODE_SIZE - 96) / 32],
     // TODO(allancalix): Fill in the rest of the metadata like access time, create
     // time, modification time, symlink information.
+}
+
+impl Inode {
+    fn default() -> Self {
+        Self {
+            inumber: 0,
+            mode: 0,
+            size: 0,
+            uid: 0,
+            gid: 0,
+            blocks: [0; (NODE_SIZE - 96) / 32],
+        }
+    }
 }
 
 #[derive(Error, Debug)]
@@ -59,18 +79,26 @@ impl<T: BlockStorage> SFS<T> {
 
         let data_map = Bitmap::new();
         &block_buffer.copy_from_slice(data_map.serialize());
-        dev.write_block(0, &mut block_buffer)?;
+        dev.write_block(1, &mut block_buffer)?;
 
-        let inode_map = Bitmap::new();
+        let root = create_root_node();
+        let mut inodes = BTreeMap::new();
+        &block_buffer[0..256].copy_from_slice(root.as_bytes());
+        inodes.insert(0, root);
+        dev.write_block(3, &mut block_buffer)?;
+
+        // Create inode allocation tracker and set root block to reserved.
+        let mut inode_map = Bitmap::new();
+        inode_map.set_reserved(0);
         &block_buffer.copy_from_slice(inode_map.serialize());
-        dev.write_block(0, &mut block_buffer)?;
+        dev.write_block(2, &mut block_buffer)?;
 
         Ok(SFS {
             dev,
             data_map,
             inode_map,
             super_block: sb,
-            inodes: BTreeMap::new(),
+            inodes,
         })
     }
 
@@ -82,8 +110,19 @@ impl<T: BlockStorage> SFS<T> {
         dev.read_block(0, &mut block_buf)?;
         let super_block = SuperBlock::parse(&block_buf, SB_MAGIC);
 
-        unimplemented!()
-        // Ok(Self { dev, super_block })
+        dev.read_block(1, &mut block_buf)?;
+        let data_map = Bitmap::parse(&block_buf);
+
+        dev.read_block(3, &mut block_buf)?;
+        let inode_map = Bitmap::parse(&block_buf);
+
+        Ok(SFS {
+            dev,
+            data_map,
+            inode_map,
+            super_block,
+            inodes: BTreeMap::new(),
+        })
     }
 
     fn prepare_sb() -> SuperBlock {
@@ -100,4 +139,12 @@ impl<T: BlockStorage> SFS<T> {
         sb.free_inodes_count = sb.inodes_count;
         sb
     }
+}
+
+fn create_root_node() -> Inode {
+    let mut root = Inode::default();
+    // TODO(allancalix): Set real root value here.
+    root.mode = 0x4000;
+
+    root
 }

@@ -1,5 +1,5 @@
-use zerocopy::{AsBytes, FromBytes};
 use crate::fs::BLOCK_SIZE;
+use zerocopy::{AsBytes, FromBytes};
 
 #[derive(Debug, PartialEq)]
 pub enum State {
@@ -24,10 +24,8 @@ impl Bitmap {
     }
 
     pub fn parse(buf: &[u8]) -> Self {
-      let map: *const Bitmap = buf.as_ptr() as *const Bitmap;
-      unsafe {
-          Bitmap::from(*map)
-      }
+        let map: *const Bitmap = buf.as_ptr() as *const Bitmap;
+        unsafe { *map }
     }
 
     pub fn serialize(&self) -> &[u8] {
