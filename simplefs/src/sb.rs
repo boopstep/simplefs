@@ -41,8 +41,8 @@ impl SuperBlock {
         }
     }
 
-    /// Reads a the super block from a buffer of of exactly size BLOCK_SIZE. Passing
-    /// a slice of any other size will result in a panic.
+    /// Attempts to parse a buffer as a SuperBlock returning a new owned instance
+    /// of the block. If the block is invalid, calling parse will cause a panic.
     pub fn parse(buf: &[u8], magic: u32) -> Self {
         let sb: *const SuperBlock = buf.as_ptr() as *const SuperBlock;
 
