@@ -1,4 +1,4 @@
-use crate::blockio::{BlockNumber, BlockStorage};
+use super::block::{BlockNumber, BlockStorage};
 use std::fs::{File, OpenOptions};
 use std::io::prelude::*;
 use std::io::{BufWriter, ErrorKind, SeekFrom};
@@ -10,9 +10,9 @@ static BLOCK_SIZE_BYTES: usize = 4096;
 
 pub struct FileBlockEmulator {
     /// The file must be a fixed-size file some exact multiple of the size of a block.
-    fd: File,
+    pub fd: File,
     /// The total number of blocks available in the file store.
-    block_count: usize,
+    pub block_count: usize,
 }
 
 /// Emulates block disk/flash storage in userspace using a file as block storage.
@@ -218,7 +218,9 @@ mod tests {
         // Attempt to write beyond range.
         let mut block = vec![0x55; 4096];
         let wresult = disk_emu.write_block(1, block.as_mut_slice());
-        if wresult.is_ok() { panic!("expected an error, got result instead") }
+        if wresult.is_ok() {
+            panic!("expected an error, got result instead")
+        }
     }
 
     #[test]
@@ -234,7 +236,9 @@ mod tests {
 
         // Fill half the block with meaningful data.
         let mut block = vec![0x55; 2048];
-        disk_emu.write_block(0, block.as_mut_slice()).expect("failed to write block");
+        disk_emu
+            .write_block(0, block.as_mut_slice())
+            .expect("failed to write block");
         disk_emu.sync_disk().unwrap();
     }
 }
