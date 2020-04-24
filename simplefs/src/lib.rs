@@ -1,6 +1,5 @@
 mod emulator;
 mod fs;
-mod alloc;
 mod blockio;
 mod sb;
 

@@ -3,7 +3,6 @@ use std::path::Path;
 use thiserror::Error;
 
 use crate::emulator::{FileBlockEmulator, FileBlockEmulatorBuilder};
-use crate::alloc::BitmapBlock;
 use crate::blockio::BlockStorage;
 use crate::sb::SuperBlock;
 
@@ -20,8 +19,6 @@ pub enum SFSError {
 pub struct SFS<T: BlockStorage> {
     dev: T,
     super_block: SuperBlock,
-    inode_bmp: BitmapBlock,
-    data_bmp: BitmapBlock,
     // TODO(allancalix): inode structure.
 }
 
@@ -33,18 +30,14 @@ impl SFS<FileBlockEmulator> {
             .build()
             .unwrap();
         let sb = SFS::prepare_sb();
-        let inode_bmp = BitmapBlock::new();
-        let data_bmp = BitmapBlock::new();
 
-        emu.write_block(0, &mut sb.serialize())?;
-        emu.write_block(1, &mut data_bmp.serialize()[0..4096])?;
-        emu.write_block(2, &mut inode_bmp.serialize()[0..4096])?;
+        let mut block_buffer = [0;4096];
+        &block_buffer[0..28].copy_from_slice(sb.serialize());
+        emu.write_block(0, &mut block_buffer)?;
 
         Ok(SFS {
             dev: emu,
             super_block: sb,
-            inode_bmp: BitmapBlock::new(),
-            data_bmp: BitmapBlock::new(),
         })
     }
 
@@ -56,18 +49,9 @@ impl SFS<FileBlockEmulator> {
         emu.read_block(0, &mut block_buf)?;
         let super_block = SuperBlock::parse(&block_buf, SB_MAGIC);
 
-        // Read inode bitmap from second block;
-        emu.read_block(1, &mut block_buf)?;
-        let data_bmp = BitmapBlock::from(&block_buf);
-
-        emu.read_block(2, &mut block_buf)?;
-        let inode_bmp = BitmapBlock::from(&block_buf);
-
         Ok(Self {
             dev: emu,
             super_block,
-            inode_bmp,
-            data_bmp,
         })
     }
 
@@ -99,18 +83,9 @@ impl From<File> for SFS<FileBlockEmulator> {
         emu.read_block(0, &mut block_buf).unwrap();
         let super_block = SuperBlock::parse(&block_buf, SB_MAGIC);
 
-        // Read inode bitmap from second block;
-        emu.read_block(1, &mut block_buf).unwrap();
-        let data_bmp = BitmapBlock::from(&block_buf);
-
-        emu.read_block(2, &mut block_buf).unwrap();
-        let inode_bmp = BitmapBlock::from(&block_buf);
-
         Self {
             dev: emu,
             super_block,
-            inode_bmp,
-            data_bmp,
         }
     }
 }
