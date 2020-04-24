@@ -1,4 +1,4 @@
-use zerocopy::{FromBytes, AsBytes};
+use zerocopy::{AsBytes, FromBytes};
 
 /// The first block of the file system storing information critical for mounting
 /// the file system and verifying the underlying disk is formatted correctly.
@@ -47,10 +47,7 @@ impl SuperBlock {
         let sb: *const SuperBlock = buf.as_ptr() as *const SuperBlock;
 
         unsafe {
-            assert_eq!(
-                magic, (*sb).sb_magic,
-                "Superblock magic constant invalid."
-            );
+            assert_eq!(magic, (*sb).sb_magic, "Superblock magic constant invalid.");
             SuperBlock::from(*sb)
         }
     }
@@ -58,7 +55,7 @@ impl SuperBlock {
     /// Serializes the superblock into a series of bytes that can be sent or
     /// deserialized back into a SuperBlock;
     pub fn serialize<'a>(&'a self) -> &'a [u8] {
-      self.as_bytes()
+        self.as_bytes()
     }
 }
 

@@ -1,5 +1,7 @@
 mod fs;
-mod sb;
 mod io;
+mod sb;
+mod alloc;
 
-pub use fs::SFS as SFS;
+pub use fs::SFS;
+pub use io::{FileBlockEmulator, FileBlockEmulatorBuilder};
