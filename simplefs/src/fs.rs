@@ -14,39 +14,52 @@ const SB_MAGIC: u32 = 0x5346_5342; // SFSB
 
 const NODE_SIZE: usize = 256;
 
+const ROOT_DEFAULT_MODE: u16 = 0x4000;
 const FT_UNKNOWN: u8 = 0;
 const FT_FILE: u8 = 1;
 const FT_DIR: u8 = 2;
 
-#[repr(packed)]
-#[derive(AsBytes, FromBytes)]
+#[repr(C)]
+#[derive(AsBytes, FromBytes, Copy, Clone)]
 pub struct Inode {
-    /// The absolute postition of the inode in the filesystem.
-    inumber: u32,
     /// The file mode (e.g full access - drwxrwxrwx).
     mode: u16,
-    /// The total size in bytes.
-    size: u32,
     /// The id of the owning user.
     uid: u16,
     /// The id of the owning group.
     gid: u16,
+    /// The number of links to this file.
+    links_count: u16,
+    /// The total size of the file in bytes.
+    size: u32,
+    /// The time the file was created in milliseconds since epoch.
+    create_time: u32,
+    /// The time the file was last updated in milliseconds since epoch.
+    update_time: u32,
+    /// The time the file was last accessed in milliseconds since epoch.
+    access_time: u32,
+    /// Reserved for future expansion of file attributes up to 256 byte limit.
+    padding: [u32; 43],
     /// Pointers for the data blocks that belong to the file. Uses the remaining
     /// space the 256 inode space.
-    blocks: [u32; (NODE_SIZE - 96) / 32],
+    blocks: [u32; 15],
     // TODO(allancalix): Fill in the rest of the metadata like access time, create
     // time, modification time, symlink information.
 }
 
 impl Inode {
-    fn default() -> Self {
+    fn new_root() -> Self {
         Self {
-            inumber: 0,
-            mode: 0,
-            size: 0,
+            mode: ROOT_DEFAULT_MODE,
             uid: 0,
             gid: 0,
-            blocks: [0; (NODE_SIZE - 96) / 32],
+            links_count: 0,
+            size: 0,
+            create_time: 0,
+            update_time: 0,
+            access_time: 0,
+            padding: [0; 43],
+            blocks: [0; 15],
         }
     }
 }
@@ -70,6 +83,10 @@ pub struct SFS<T: BlockStorage> {
 
 impl<T: BlockStorage> SFS<T> {
     /// Initializes the file system onto owned block storage.
+    ///
+    /// # Layout
+    ///
+    /// | Superblock | Bitmap (data region) | Bitmap (inodes) | Inodes |
     pub fn create(mut dev: T) -> Result<Self, SFSError> {
         let sb = SFS::<T>::prepare_sb();
 
@@ -81,7 +98,8 @@ impl<T: BlockStorage> SFS<T> {
         &block_buffer.copy_from_slice(data_map.serialize());
         dev.write_block(1, &mut block_buffer)?;
 
-        let root = create_root_node();
+        println!("{:?}", std::mem::size_of::<Inode>());
+        let root = Inode::new_root();
         let mut inodes = BTreeMap::new();
         &block_buffer[0..256].copy_from_slice(root.as_bytes());
         inodes.insert(0, root);
@@ -100,6 +118,28 @@ impl<T: BlockStorage> SFS<T> {
             super_block: sb,
             inodes,
         })
+    }
+
+    #[inline]
+    fn get_root(&self) -> &Inode {
+        self.inodes.get(&0_u32)
+            .expect("File system has no root inode. This should never happen")
+    }
+
+    pub fn open_file<P: AsRef<Path>>(&mut self, path : P) -> Result<u32, SFSError> {
+        let mut parts = path.as_ref().components();
+        assert_eq!(parts.next(), Some(std::path::Component::RootDir));
+
+        let root = self.get_root();
+        let data_blocks = root.blocks;
+
+        let mut buf = Vec::new();
+        println!("{:?}", parts);
+        for block in &data_blocks {
+            panic!("Well I got this far.");
+            self.dev.read_block(*block as usize, &mut buf);
+        }
+        unimplemented!()
     }
 
     pub fn open<P: AsRef<Path>>(disk: P, blocknr: usize) -> Result<Self, SFSError> {
@@ -141,10 +181,20 @@ impl<T: BlockStorage> SFS<T> {
     }
 }
 
-fn create_root_node() -> Inode {
-    let mut root = Inode::default();
-    // TODO(allancalix): Set real root value here.
-    root.mode = 0x4000;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::io::FileBlockEmulatorBuilder;
 
-    root
+    #[test]
+    fn can_open_root_dir() {
+        let dev = tempfile::tempfile().unwrap();
+        let dev = FileBlockEmulatorBuilder::from(dev)
+            .with_block_size(64)
+            .build()
+            .expect("Could not initialize disk emulator.");
+
+        let mut fs = SFS::create(dev).unwrap();
+        // fs.open_file("/").unwrap();
+    }
 }
