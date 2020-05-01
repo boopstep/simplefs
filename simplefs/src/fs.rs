@@ -62,6 +62,22 @@ impl Inode {
             blocks: [0; 15],
         }
     }
+
+    fn default() -> Self {
+        Self {
+            // TODO(allancalix): Probably find another mode.
+            mode: ROOT_DEFAULT_MODE,
+            uid: 0,
+            gid: 0,
+            links_count: 0,
+            size: 0,
+            create_time: 0,
+            update_time: 0,
+            access_time: 0,
+            padding: [0; 43],
+            blocks: [0; 15],
+        }
+    }
 }
 
 enum InodeStatus {
@@ -73,8 +89,11 @@ enum InodeStatus {
 
 // Encodes open filesystem call options http://man7.org/linux/man-pages/man2/open.2.html.
 pub enum OpenMode {
-    O_DIRECTORY,
-    O_CREAT,
+    RO,
+    WO,
+    RW,
+    DIRECTORY,
+    CREATE,
 }
 
 #[derive(Error, Debug)]
@@ -175,11 +194,7 @@ impl<T: BlockStorage> SFS<T> {
     /// Opens a file descriptor at the path provided. By default, this implementation will return an
     /// error if the file does not exists. Set OpenMode to override the behavior and create a file or
     /// directory.
-    pub fn open_file<P: AsRef<Path>>(
-        &self,
-        path: P,
-        mode: Option<OpenMode>,
-    ) -> Result<u32, SFSError> {
+    pub fn open_file<P: AsRef<Path>>(&self, path: P, mode: OpenMode) -> Result<u32, SFSError> {
         let mut parts = path.as_ref().components();
         assert_eq!(
             parts.next(),
@@ -190,7 +205,21 @@ impl<T: BlockStorage> SFS<T> {
         let root = self.get_root();
         let handle = self.get_handle(&mut parts, &root, 0).unwrap();
         match handle {
-            InodeStatus::NotFound(i) => unimplemented!(),
+            InodeStatus::NotFound(i) => {
+                match mode {
+                    OpenMode::RO | OpenMode::RW | OpenMode::WO => Err(SFSError::DoesNotExist),
+                    OpenMode::CREATE => {
+                        let mut new_fd = Inode::default();
+                        let new_inum = self.inode_map.get_next_free();
+                        let parent_node = self.inodes.get(&i).unwrap();
+                        // Write handle to directory data block.
+                        // Write inode to block storage.
+                        unimplemented!()
+                    }
+                    OpenMode::DIRECTORY => unimplemented!(),
+                    _ => unimplemented!(),
+                }
+            }
             InodeStatus::Found(i) => Ok(i),
         }
     }
@@ -248,7 +277,7 @@ mod tests {
             .expect("Could not initialize disk emulator.");
 
         let mut fs = SFS::create(dev).unwrap();
-        assert_eq!(fs.open_file("/", None).unwrap(), 0);
+        assert_eq!(fs.open_file("/", OpenMode::RO).unwrap(), 0);
     }
 
     #[test]
@@ -260,7 +289,7 @@ mod tests {
             .expect("Could not initialize disk emulator.");
 
         let mut fs = SFS::create(dev).unwrap();
-        assert_eq!(fs.open_file("/foo", Some(OpenMode::O_CREAT)).unwrap(), 1);
+        assert_eq!(fs.open_file("/foo", OpenMode::CREATE).unwrap(), 1);
     }
 
     #[test]
@@ -273,7 +302,7 @@ mod tests {
             .expect("Could not initialize disk emulator.");
 
         let mut fs = SFS::create(dev).unwrap();
-        fs.open_file("/foo/bar", None).unwrap();
+        fs.open_file("/foo/bar", OpenMode::RO).unwrap();
     }
 
     #[test]
@@ -285,6 +314,6 @@ mod tests {
             .expect("Could not initialize disk emulator.");
 
         let mut fs = SFS::create(dev).unwrap();
-        assert_eq!(fs.open_file("/foo/bar", None).unwrap(), 4);
+        assert_eq!(fs.open_file("/foo/bar", OpenMode::RO).unwrap(), 4);
     }
 }
