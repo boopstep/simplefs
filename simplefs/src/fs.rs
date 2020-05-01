@@ -8,11 +8,11 @@ use crate::sb::SuperBlock;
 use thiserror::Error;
 use zerocopy::{AsBytes, FromBytes};
 
-pub const BLOCK_SIZE: usize = 4096;
-
 const SB_MAGIC: u32 = 0x5346_5342; // SFSB
 
+pub const BLOCK_SIZE: usize = 4096;
 const NODE_SIZE: usize = 256;
+const NODES_PER_BLOCK: usize = BLOCK_SIZE / NODE_SIZE;
 
 const ROOT_DEFAULT_MODE: u16 = 0x4000;
 const FT_UNKNOWN: u8 = 0;
@@ -64,8 +64,23 @@ impl Inode {
     }
 }
 
+enum InodeStatus {
+    /// The entity requested exists.
+    Found(u32),
+    /// The parent handle if traversal finds parent directory but not terminal entity.
+    NotFound(u32),
+}
+
+// Encodes open filesystem call options http://man7.org/linux/man-pages/man2/open.2.html.
+pub enum OpenMode {
+    O_DIRECTORY,
+    O_CREAT,
+}
+
 #[derive(Error, Debug)]
 pub enum SFSError {
+    #[error("found no file at path")]
+    DoesNotExist,
     #[error("invalid file system block layout")]
     InvalidBlock(#[from] std::io::Error),
 }
@@ -121,11 +136,22 @@ impl<T: BlockStorage> SFS<T> {
 
     #[inline]
     fn get_root(&self) -> &Inode {
-        self.inodes.get(&0_u32)
+        self.inodes
+            .get(&0_u32)
             .expect("File system has no root inode. This should never happen")
     }
 
-    pub fn get_handle(&self, mut parts: std::path::Components, node: &Inode, inumber: u32) -> Result<Option<u32>, SFSError> {
+    pub fn write(&mut self, inum: u32, data: &[u8]) -> Result<(), SFSError> {
+        let inode = self.inodes.get(&inum);
+        unimplemented!()
+    }
+
+    fn get_handle(
+        &self,
+        mut parts: &mut std::path::Components,
+        node: &Inode,
+        inum: u32,
+    ) -> Result<InodeStatus, SFSError> {
         let part = parts.next();
 
         match part {
@@ -135,19 +161,38 @@ impl<T: BlockStorage> SFS<T> {
                         todo!("Add search through data blocks, parsing, and comparing to part.")
                     }
                 }
+                // The path did not match before reaching the final directory (where the file should exist).
+                if parts.peekable().peek().is_some() {
+                    return Err(SFSError::DoesNotExist);
+                }
                 // This means that the inode exists but no file handles belong to it.
-                Ok(None)
-            },
-            None => Ok(Some(inumber)),
+                Ok(InodeStatus::NotFound(inum))
+            }
+            None => Ok(InodeStatus::Found(inum)),
         }
     }
 
-    pub fn open_file<P: AsRef<Path>>(&self, path : P) -> Result<Option<u32>, SFSError> {
+    /// Opens a file descriptor at the path provided. By default, this implementation will return an
+    /// error if the file does not exists. Set OpenMode to override the behavior and create a file or
+    /// directory.
+    pub fn open_file<P: AsRef<Path>>(
+        &self,
+        path: P,
+        mode: Option<OpenMode>,
+    ) -> Result<u32, SFSError> {
         let mut parts = path.as_ref().components();
-        assert_eq!(parts.next(), Some(std::path::Component::RootDir), "Path must begin with a leading slash - \"/\".");
+        assert_eq!(
+            parts.next(),
+            Some(std::path::Component::RootDir),
+            "Path must begin with a leading slash - \"/\"."
+        );
 
         let root = self.get_root();
-        self.get_handle(parts, &root, 0)
+        let handle = self.get_handle(&mut parts, &root, 0).unwrap();
+        match handle {
+            InodeStatus::NotFound(i) => unimplemented!(),
+            InodeStatus::Found(i) => Ok(i),
+        }
     }
 
     pub fn open<P: AsRef<Path>>(disk: P, blocknr: usize) -> Result<Self, SFSError> {
@@ -203,11 +248,11 @@ mod tests {
             .expect("Could not initialize disk emulator.");
 
         let mut fs = SFS::create(dev).unwrap();
-        assert_eq!(fs.open_file("/").unwrap(), Some(0));
+        assert_eq!(fs.open_file("/", None).unwrap(), 0);
     }
 
     #[test]
-    fn file_not_found_returns_none() {
+    fn file_not_found_with_create_returns_handle() {
         let dev = tempfile::tempfile().unwrap();
         let dev = FileBlockEmulatorBuilder::from(dev)
             .with_block_size(64)
@@ -215,10 +260,11 @@ mod tests {
             .expect("Could not initialize disk emulator.");
 
         let mut fs = SFS::create(dev).unwrap();
-        assert_eq!(fs.open_file("/foo/bar").unwrap(), None);
+        assert_eq!(fs.open_file("/foo", Some(OpenMode::O_CREAT)).unwrap(), 1);
     }
 
     #[test]
+    #[should_panic]
     fn inodes_not_including_data_return_none() {
         let dev = tempfile::tempfile().unwrap();
         let dev = FileBlockEmulatorBuilder::from(dev)
@@ -227,7 +273,7 @@ mod tests {
             .expect("Could not initialize disk emulator.");
 
         let mut fs = SFS::create(dev).unwrap();
-        assert_eq!(fs.open_file("/foo/bar").unwrap(), None);
+        fs.open_file("/foo/bar", None).unwrap();
     }
 
     #[test]
@@ -239,6 +285,6 @@ mod tests {
             .expect("Could not initialize disk emulator.");
 
         let mut fs = SFS::create(dev).unwrap();
-        assert_eq!(fs.open_file("/foo/bar").unwrap(), Some(4));
+        assert_eq!(fs.open_file("/foo/bar", None).unwrap(), 4);
     }
 }

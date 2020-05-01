@@ -1,6 +1,6 @@
-pub mod io;
 mod alloc;
 mod fs;
+pub mod io;
 mod sb;
 
 pub use fs::SFS;
