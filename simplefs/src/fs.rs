@@ -98,7 +98,6 @@ impl<T: BlockStorage> SFS<T> {
         &block_buffer.copy_from_slice(data_map.serialize());
         dev.write_block(1, &mut block_buffer)?;
 
-        println!("{:?}", std::mem::size_of::<Inode>());
         let root = Inode::new_root();
         let mut inodes = BTreeMap::new();
         &block_buffer[0..256].copy_from_slice(root.as_bytes());
@@ -126,20 +125,29 @@ impl<T: BlockStorage> SFS<T> {
             .expect("File system has no root inode. This should never happen")
     }
 
-    pub fn open_file<P: AsRef<Path>>(&mut self, path : P) -> Result<u32, SFSError> {
+    pub fn get_handle(&self, mut parts: std::path::Components, node: &Inode, inumber: u32) -> Result<Option<u32>, SFSError> {
+        let part = parts.next();
+
+        match part {
+            Some(component) => {
+                for block in node.blocks.iter() {
+                    if *block > 8 {
+                        todo!("Add search through data blocks, parsing, and comparing to part.")
+                    }
+                }
+                // This means that the inode exists but no file handles belong to it.
+                Ok(None)
+            },
+            None => Ok(Some(inumber)),
+        }
+    }
+
+    pub fn open_file<P: AsRef<Path>>(&self, path : P) -> Result<Option<u32>, SFSError> {
         let mut parts = path.as_ref().components();
-        assert_eq!(parts.next(), Some(std::path::Component::RootDir));
+        assert_eq!(parts.next(), Some(std::path::Component::RootDir), "Path must begin with a leading slash - \"/\".");
 
         let root = self.get_root();
-        let data_blocks = root.blocks;
-
-        let mut buf = Vec::new();
-        println!("{:?}", parts);
-        for block in &data_blocks {
-            panic!("Well I got this far.");
-            self.dev.read_block(*block as usize, &mut buf);
-        }
-        unimplemented!()
+        self.get_handle(parts, &root, 0)
     }
 
     pub fn open<P: AsRef<Path>>(disk: P, blocknr: usize) -> Result<Self, SFSError> {
@@ -187,7 +195,7 @@ mod tests {
     use crate::io::FileBlockEmulatorBuilder;
 
     #[test]
-    fn can_open_root_dir() {
+    fn root_dir_returns_root_fd() {
         let dev = tempfile::tempfile().unwrap();
         let dev = FileBlockEmulatorBuilder::from(dev)
             .with_block_size(64)
@@ -195,6 +203,42 @@ mod tests {
             .expect("Could not initialize disk emulator.");
 
         let mut fs = SFS::create(dev).unwrap();
-        // fs.open_file("/").unwrap();
+        assert_eq!(fs.open_file("/").unwrap(), Some(0));
+    }
+
+    #[test]
+    fn file_not_found_returns_none() {
+        let dev = tempfile::tempfile().unwrap();
+        let dev = FileBlockEmulatorBuilder::from(dev)
+            .with_block_size(64)
+            .build()
+            .expect("Could not initialize disk emulator.");
+
+        let mut fs = SFS::create(dev).unwrap();
+        assert_eq!(fs.open_file("/foo/bar").unwrap(), None);
+    }
+
+    #[test]
+    fn inodes_not_including_data_return_none() {
+        let dev = tempfile::tempfile().unwrap();
+        let dev = FileBlockEmulatorBuilder::from(dev)
+            .with_block_size(64)
+            .build()
+            .expect("Could not initialize disk emulator.");
+
+        let mut fs = SFS::create(dev).unwrap();
+        assert_eq!(fs.open_file("/foo/bar").unwrap(), None);
+    }
+
+    #[test]
+    fn returns_file_descriptor_of_known_file() {
+        let dev = tempfile::tempfile().unwrap();
+        let dev = FileBlockEmulatorBuilder::from(dev)
+            .with_block_size(64)
+            .build()
+            .expect("Could not initialize disk emulator.");
+
+        let mut fs = SFS::create(dev).unwrap();
+        assert_eq!(fs.open_file("/foo/bar").unwrap(), Some(4));
     }
 }
