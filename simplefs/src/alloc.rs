@@ -49,11 +49,8 @@ impl Bitmap {
 
     pub fn get_next_free(&self) -> usize {
         for i in 0..(BLOCK_SIZE * 8) {
-            match self.get(i) {
-                State::Free => {
-                    return i;
-                }
-                _ => (),
+            if let State::Free = self.get(i) {
+                return i;
             }
         }
         panic!("Out of space!")

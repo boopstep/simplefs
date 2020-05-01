@@ -15,9 +15,6 @@ const NODE_SIZE: usize = 256;
 const NODES_PER_BLOCK: usize = BLOCK_SIZE / NODE_SIZE;
 
 const ROOT_DEFAULT_MODE: u16 = 0x4000;
-const FT_UNKNOWN: u8 = 0;
-const FT_FILE: u8 = 1;
-const FT_DIR: u8 = 2;
 
 #[repr(C)]
 #[derive(AsBytes, FromBytes, Copy, Clone)]
@@ -160,21 +157,16 @@ impl<T: BlockStorage> SFS<T> {
             .expect("File system has no root inode. This should never happen")
     }
 
-    pub fn write(&mut self, inum: u32, data: &[u8]) -> Result<(), SFSError> {
-        let inode = self.inodes.get(&inum);
-        unimplemented!()
-    }
-
     fn get_handle(
         &self,
-        mut parts: &mut std::path::Components,
+        parts: &mut std::path::Components,
         node: &Inode,
         inum: u32,
     ) -> Result<InodeStatus, SFSError> {
         let part = parts.next();
 
         match part {
-            Some(component) => {
+            Some(_component) => {
                 for block in node.blocks.iter() {
                     if *block > 8 {
                         todo!("Add search through data blocks, parsing, and comparing to part.")
@@ -209,15 +201,15 @@ impl<T: BlockStorage> SFS<T> {
                 match mode {
                     OpenMode::RO | OpenMode::RW | OpenMode::WO => Err(SFSError::DoesNotExist),
                     OpenMode::CREATE => {
-                        let mut new_fd = Inode::default();
-                        let new_inum = self.inode_map.get_next_free();
+                        let new_fd = Inode::default();
+                        let inum = self.inode_map.get_next_free();
                         let parent_node = self.inodes.get(&i).unwrap();
                         // Write handle to directory data block.
                         // Write inode to block storage.
                         unimplemented!()
                     }
                     OpenMode::DIRECTORY => unimplemented!(),
-                    _ => unimplemented!(),
+                    // TODO(allancalix): The rest.
                 }
             }
             InodeStatus::Found(i) => Ok(i),
