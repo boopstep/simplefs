@@ -1,0 +1,10 @@
+[package]
+name = "simplefs-fuse"
+version = "0.1.0"
+edition = "2018"
+authors = ["Allan Calix <contact@allancalix.com>"]
+build = "build.rs"
+links = "fuse,fuse3"
+
+[build-dependencies]
+pkg-config = "0.3.17"
