@@ -1,7 +1,7 @@
 mod alloc;
 mod fs;
 pub mod io;
-mod sb;
 mod node;
+mod sb;
 
 pub use fs::SFS;
