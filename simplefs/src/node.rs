@@ -103,12 +103,17 @@ impl<T: BlockStorage> InodeGroup<T> {
     }
 
     pub fn open(store: T, alloc_tracker: Bitmap, disk_blocks: u32) -> Self {
-        let mut allocated_blocks = HashSet::new();
+      assert!(disk_blocks > 0, "There must be at least one data block available to allocate nodes.");
+      let mut allocated_blocks = HashSet::new();
         for i in 0..(disk_blocks * NODES_PER_BLOCK) {
             if let State::Used = alloc_tracker.get(i as usize) {
                 allocated_blocks.insert(i / NODES_PER_BLOCK);
             }
         }
+        // Any group of inodes will at least have the root node allocated so the max should never be
+        // less than one if the blocks are valid. Any allocations beyond the total disk blocks allocated
+        // for inodes represent an error.
+        assert!(allocated_blocks.iter().max().unwrap() < &disk_blocks);
 
         let mut group = Self {
             store,
