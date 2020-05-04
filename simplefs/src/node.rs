@@ -9,6 +9,7 @@ const BLOCK_SIZE: u32 = 4096;
 const NODE_SIZE: u32 = 256;
 const NODES_PER_BLOCK: u32 = BLOCK_SIZE / NODE_SIZE;
 const ROOT_DEFAULT_MODE: u16 = 0x4000;
+const DEFAULT_MODE: u16 = 0x2000;
 
 #[repr(C)]
 #[derive(AsBytes, FromBytes, Copy, Clone)]
@@ -63,8 +64,7 @@ impl Inode {
 
     fn default() -> Self {
         Self {
-            // TODO(allancalix): Probably find another mode.
-            mode: ROOT_DEFAULT_MODE,
+            mode: DEFAULT_MODE,
             uid: 0,
             gid: 0,
             links_count: 0,
@@ -116,11 +116,9 @@ impl<T: BlockStorage> InodeGroup<T> {
             nodes: BTreeMap::new(),
         };
         for block in allocated_blocks.into_iter() {
-            println!("Loading inodes from block {}.", block);
             group.load_block(block).unwrap();
         }
 
-        println!("Inodes loaded from disk.");
         group
     }
 
@@ -128,14 +126,15 @@ impl<T: BlockStorage> InodeGroup<T> {
         self.nodes.len()
     }
 
-    pub fn insert(&mut self, node_block: u32, node: Inode) {
+    fn insert(&mut self, node_block: u32, node: Inode) -> Result<(), std::io::Error> {
         // TODO(allancalix): Allocation tracker needs sync on insert.
         self.alloc_tracker.set_reserved(node_block as usize);
         self.nodes.insert(node_block, node);
         let disk_block = self.get_disk_block(node_block);
         self.store
-            .write_block(disk_block, &mut self.serialize_block(disk_block as u32))
-            .unwrap();
+            .write_block(disk_block, &mut self.serialize_block(disk_block as u32))?;
+        self.store.sync_disk()?;
+        Ok(())
     }
 
     fn get_disk_block(&self, node_block: u32) -> usize {
@@ -144,12 +143,13 @@ impl<T: BlockStorage> InodeGroup<T> {
 
     /// Loads a disk block of inodes into the in-memory tree.
     fn load_block(&mut self, disk_block: u32) -> Result<(), std::io::Error> {
-        let offset = disk_block * NODES_PER_BLOCK;
+        let block_start = disk_block * NODES_PER_BLOCK;
+        let block_end = block_start + NODES_PER_BLOCK;
         let mut block_buf = vec![0; 4096];
-        for i in offset..NODES_PER_BLOCK {
+        for i in block_start..block_end {
             if let State::Used = self.alloc_tracker.get(i as usize) {
                 self.store.read_block(disk_block as usize, &mut block_buf)?;
-                let node_offset = offset as usize % NODE_SIZE as usize;
+                let node_offset = block_start as usize % NODE_SIZE as usize;
                 let node = Inode::parse(&block_buf[node_offset..NODE_SIZE as usize]);
                 self.nodes.insert(i, node);
             }
@@ -161,10 +161,10 @@ impl<T: BlockStorage> InodeGroup<T> {
     fn serialize_block(&self, disk_block: u32) -> Vec<u8> {
         let mut block_buf = vec![0; 4096];
         let offset = disk_block * NODES_PER_BLOCK;
-        let mut buffer_index = 0;
-        for (_, node) in self.nodes.range(offset..NODES_PER_BLOCK) {
-            &block_buf[buffer_index..NODE_SIZE as usize].copy_from_slice(node.as_bytes());
-            buffer_index += NODE_SIZE as usize;
+        for (i, node) in self.nodes.range(offset..NODES_PER_BLOCK) {
+            let node_offset = *i as usize * NODE_SIZE as usize;
+            &block_buf[node_offset..node_offset + NODE_SIZE as usize]
+                .copy_from_slice(node.as_bytes());
         }
 
         block_buf
@@ -199,15 +199,25 @@ mod tests {
             .expect("Could not initialize disk emulator.");
 
         let nodes_map = Bitmap::new();
-        InodeGroup::new(dev, nodes_map);
+        let mut init_group = InodeGroup::new(dev, nodes_map);
+        init_group.insert(1, Inode::default());
+        // Add an inode to a second disk block.
+        init_group.insert(16, Inode::default());
+        assert_eq!(init_group.total_nodes(), 3);
 
         let dev = FileBlockEmulatorBuilder::from(fd)
             .with_block_size(64)
             .build()
             .expect("Could not initialize disk emulator.");
         let mut nodes_map = Bitmap::new();
-        nodes_map.set_reserved(0); // root node
+        nodes_map.set_reserved(0); // root node initialized by default.
+        nodes_map.set_reserved(1);
+        nodes_map.set_reserved(16);
         let group = InodeGroup::open(dev, nodes_map, 5);
-        assert_eq!(group.total_nodes(), 1);
+
+        assert_eq!(group.total_nodes(), 3);
+        assert_eq!(group.nodes.get(&0).unwrap().mode, ROOT_DEFAULT_MODE);
+        assert!(group.nodes.get(&1).is_some());
+        assert!(group.nodes.get(&16).is_some());
     }
 }

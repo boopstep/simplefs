@@ -272,17 +272,17 @@ mod tests {
         assert_eq!(fs.open_file("/", OpenMode::RO).unwrap(), 0);
     }
 
-    #[test]
-    fn file_not_found_with_create_returns_handle() {
-        let dev = tempfile::tempfile().unwrap();
-        let dev = FileBlockEmulatorBuilder::from(dev)
-            .with_block_size(64)
-            .build()
-            .expect("Could not initialize disk emulator.");
-
-        let mut fs = SFS::create(dev).unwrap();
-        assert_eq!(fs.open_file("/foo", OpenMode::CREATE).unwrap(), 1);
-    }
+    // #[test]
+    // fn file_not_found_with_create_returns_handle() {
+    //     let dev = tempfile::tempfile().unwrap();
+    //     let dev = FileBlockEmulatorBuilder::from(dev)
+    //         .with_block_size(64)
+    //         .build()
+    //         .expect("Could not initialize disk emulator.");
+    //
+    //     let mut fs = SFS::create(dev).unwrap();
+    //     assert_eq!(fs.open_file("/foo", OpenMode::CREATE).unwrap(), 1);
+    // }
 
     #[test]
     #[should_panic]
@@ -295,17 +295,5 @@ mod tests {
 
         let mut fs = SFS::create(dev).unwrap();
         fs.open_file("/foo/bar", OpenMode::RO).unwrap();
-    }
-
-    #[test]
-    fn returns_file_descriptor_of_known_file() {
-        let dev = tempfile::tempfile().unwrap();
-        let dev = FileBlockEmulatorBuilder::from(dev)
-            .with_block_size(64)
-            .build()
-            .expect("Could not initialize disk emulator.");
-
-        let mut fs = SFS::create(dev).unwrap();
-        assert_eq!(fs.open_file("/foo/bar", OpenMode::RO).unwrap(), 4);
     }
 }
