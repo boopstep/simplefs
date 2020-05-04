@@ -103,8 +103,11 @@ impl<T: BlockStorage> InodeGroup<T> {
     }
 
     pub fn open(store: T, alloc_tracker: Bitmap, disk_blocks: u32) -> Self {
-      assert!(disk_blocks > 0, "There must be at least one data block available to allocate nodes.");
-      let mut allocated_blocks = HashSet::new();
+        assert!(
+            disk_blocks > 0,
+            "There must be at least one data block available to allocate nodes."
+        );
+        let mut allocated_blocks = HashSet::new();
         for i in 0..(disk_blocks * NODES_PER_BLOCK) {
             if let State::Used = alloc_tracker.get(i as usize) {
                 allocated_blocks.insert(i / NODES_PER_BLOCK);
@@ -125,6 +128,10 @@ impl<T: BlockStorage> InodeGroup<T> {
         }
 
         group
+    }
+
+    pub fn get(&mut self, inum: u32) -> Option<&Inode> {
+        self.nodes.get(&inum)
     }
 
     pub fn total_nodes(&self) -> usize {
@@ -193,6 +200,25 @@ mod tests {
 
         assert_eq!(root.uid, parsed_root.uid);
         assert_eq!(root.gid, parsed_root.gid);
+    }
+
+    #[test]
+    fn can_retrieve_inserted_inode() {
+        let fd = tempfile::tempfile().unwrap();
+        let dev = FileBlockEmulatorBuilder::from(fd.try_clone().unwrap())
+            .with_block_size(64)
+            .build()
+            .expect("Could not initialize disk emulator.");
+
+        let nodes_map = Bitmap::new();
+        let mut group = InodeGroup::new(dev, nodes_map);
+        let mut node = Inode::default();
+        node.uid = 100;
+        node.gid = 100;
+        group.insert(1, node).unwrap();
+
+        assert_eq!(group.get(1).unwrap().uid, 100);
+        assert_eq!(group.get(1).unwrap().gid, 100);
     }
 
     #[test]
