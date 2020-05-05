@@ -93,6 +93,7 @@ impl BlockStorage for FileBlockEmulator {
 pub struct FileBlockEmulatorBuilder {
     fd: File,
     block_count: usize,
+    clear_medium: bool,
 }
 
 impl From<File> for FileBlockEmulatorBuilder {
@@ -102,6 +103,7 @@ impl From<File> for FileBlockEmulatorBuilder {
             // A better default here might be the size of the file rounded down
             // to the nearest block.
             block_count: 0,
+            clear_medium: true,
         }
     }
 }
@@ -113,13 +115,21 @@ impl FileBlockEmulatorBuilder {
         self
     }
 
+    /// Selects whether to zero out the provided file descriptor, on by default.
+    pub fn clear_medium(mut self, choose: bool) -> Self {
+        self.clear_medium = choose;
+        self
+    }
+
     /// This builder assumed ownership of the file descriptor used and does
     /// destructive things to prepare the file for use. Additionally, ownership
     /// of the file is transfered to the emulator meaning this builder can only
     /// be used to create one emulator.
     pub fn build(mut self) -> std::io::Result<FileBlockEmulator> {
         debug_assert!(self.block_count > 0);
-        self.zero_block()?;
+        if self.clear_medium {
+            self.zero_block()?;
+        }
         Ok(FileBlockEmulator {
             fd: self.fd,
             block_count: self.block_count,

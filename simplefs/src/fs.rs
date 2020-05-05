@@ -1,87 +1,38 @@
-use std::collections::BTreeMap;
 use std::path::Path;
 
 use crate::alloc::Bitmap;
 use crate::io::BlockStorage;
+use crate::node::InodeGroup;
 use crate::sb::SuperBlock;
 
 use thiserror::Error;
-use zerocopy::{AsBytes, FromBytes};
 
 const SB_MAGIC: u32 = 0x5346_5342; // SFSB
 
 pub const BLOCK_SIZE: usize = 4096;
 const NODE_SIZE: usize = 256;
-const NODES_PER_BLOCK: usize = BLOCK_SIZE / NODE_SIZE;
 
-const ROOT_DEFAULT_MODE: u16 = 0x4000;
+/// Known locations.
+const SUPERBLOCK_INDEX: usize = 0;
+const DATA_REGION_BMP: usize = 1;
+const INODE_BMP: usize = 2;
+const INODE_START: usize = 3;
 
-#[repr(C)]
-#[derive(AsBytes, FromBytes, Copy, Clone)]
-pub struct Inode {
-    /// The file mode (e.g full access - drwxrwxrwx).
-    mode: u16,
-    /// The id of the owning user.
-    uid: u16,
-    /// The id of the owning group.
-    gid: u16,
-    /// The number of links to this file.
-    links_count: u16,
-    /// The total size of the file in bytes.
-    size: u32,
-    /// The time the file was created in milliseconds since epoch.
-    create_time: u32,
-    /// The time the file was last updated in milliseconds since epoch.
-    update_time: u32,
-    /// The time the file was last accessed in milliseconds since epoch.
-    access_time: u32,
-    /// Reserved for future expansion of file attributes up to 256 byte limit.
-    padding: [u32; 43],
-    /// Pointers for the data blocks that belong to the file. Uses the remaining
-    /// space the 256 inode space.
-    blocks: [u32; 15],
-    // TODO(allancalix): Fill in the rest of the metadata like access time, create
-    // time, modification time, symlink information.
-}
-
-impl Inode {
-    fn new_root() -> Self {
-        Self {
-            mode: ROOT_DEFAULT_MODE,
-            uid: 0,
-            gid: 0,
-            links_count: 0,
-            size: 0,
-            create_time: 0,
-            update_time: 0,
-            access_time: 0,
-            padding: [0; 43],
-            blocks: [0; 15],
-        }
-    }
-
+impl Default for SuperBlock {
     fn default() -> Self {
-        Self {
-            // TODO(allancalix): Probably find another mode.
-            mode: ROOT_DEFAULT_MODE,
-            uid: 0,
-            gid: 0,
-            links_count: 0,
-            size: 0,
-            create_time: 0,
-            update_time: 0,
-            access_time: 0,
-            padding: [0; 43],
-            blocks: [0; 15],
-        }
+        let mut sb = SuperBlock::new();
+        sb.sb_magic = SB_MAGIC;
+        // This is a limited implementation only supporting at most 80 file system
+        // objects (files or directories).
+        sb.inodes_count = 5 * (BLOCK_SIZE / NODE_SIZE) as u32;
+        // Use the remaining space for user data blocks.
+        sb.blocks_count = 56;
+        sb.reserved_blocks_count = 0;
+        sb.free_blocks_count = 0;
+        // All inodes are initially free.
+        sb.free_inodes_count = sb.inodes_count;
+        sb
     }
-}
-
-enum InodeStatus {
-    /// The entity requested exists.
-    Found(u32),
-    /// The parent handle if traversal finds parent directory but not terminal entity.
-    NotFound(u32),
 }
 
 // Encodes open filesystem call options http://man7.org/linux/man-pages/man2/open.2.html.
@@ -107,193 +58,154 @@ pub struct SFS<T: BlockStorage> {
     dev: T,
     super_block: SuperBlock,
     data_map: Bitmap,
-    inode_map: Bitmap,
-    inodes: BTreeMap<u32, Inode>,
-    // TODO(allancalix): inode structure.
+    inodes: InodeGroup,
 }
 
 impl<T: BlockStorage> SFS<T> {
     /// Initializes the file system onto owned block storage.
     ///
     /// # Layout
-    ///
-    /// | Superblock | Bitmap (data region) | Bitmap (inodes) | Inodes |
+    /// ==============================================================================
+    /// | SuperBlock | Bitmap (data region) | Bitmap (inodes) | Inodes | Data Region |
+    /// ==============================================================================
     pub fn create(mut dev: T) -> Result<Self, SFSError> {
-        let sb = SFS::<T>::prepare_sb();
-
+        // Reusable buffer for writing blocks.
         let mut block_buffer = [0; 4096];
-        &block_buffer[0..28].copy_from_slice(sb.serialize());
-        dev.write_block(0, &mut block_buffer)?;
 
+        // Init SuperBlock header.
+        let super_block = SuperBlock::default();
+        &block_buffer[0..28].copy_from_slice(super_block.serialize());
+        dev.write_block(SUPERBLOCK_INDEX, &mut block_buffer)?;
+
+        // Init allocation map for data region.
         let data_map = Bitmap::new();
         &block_buffer.copy_from_slice(data_map.serialize());
-        dev.write_block(1, &mut block_buffer)?;
+        dev.write_block(DATA_REGION_BMP, &mut block_buffer)?;
 
-        let root = Inode::new_root();
-        let mut inodes = BTreeMap::new();
-        &block_buffer[0..256].copy_from_slice(root.as_bytes());
-        inodes.insert(0, root);
-        dev.write_block(3, &mut block_buffer)?;
-
-        // Create inode allocation tracker and set root block to reserved.
-        let mut inode_map = Bitmap::new();
-        inode_map.set_reserved(0);
-        &block_buffer.copy_from_slice(inode_map.serialize());
-        dev.write_block(2, &mut block_buffer)?;
+        // Initialize inode structure with root node.
+        let inodes = InodeGroup::new(Bitmap::new());
+        &block_buffer.copy_from_slice(inodes.allocations().serialize());
+        dev.write_block(INODE_BMP, &mut block_buffer)?;
+        dev.write_block(INODE_START, &mut inodes.serialize_block(0))?;
+        dev.sync_disk()?;
 
         Ok(SFS {
             dev,
-            data_map,
-            inode_map,
-            super_block: sb,
             inodes,
+            data_map,
+            super_block,
         })
     }
 
-    #[inline]
-    fn get_root(&self) -> &Inode {
-        self.inodes
-            .get(&0_u32)
-            .expect("File system has no root inode. This should never happen")
-    }
+    pub fn open(mut dev: T, blocknr: usize) -> Result<Self, SFSError> {
+        let mut block_buf = vec![0; 4096];
 
-    fn get_handle(
-        &self,
-        parts: &mut std::path::Components,
-        node: &Inode,
-        inum: u32,
-    ) -> Result<InodeStatus, SFSError> {
-        let part = parts.next();
+        // Read superblock from first block;
+        dev.read_block(SUPERBLOCK_INDEX, &mut block_buf)?;
+        let super_block = SuperBlock::parse(&block_buf, SB_MAGIC);
 
-        match part {
-            Some(_component) => {
-                for block in node.blocks.iter() {
-                    if *block > 8 {
-                        todo!("Add search through data blocks, parsing, and comparing to part.")
-                    }
-                }
-                // The path did not match before reaching the final directory (where the file should exist).
-                if parts.peekable().peek().is_some() {
-                    return Err(SFSError::DoesNotExist);
-                }
-                // This means that the inode exists but no file handles belong to it.
-                Ok(InodeStatus::NotFound(inum))
-            }
-            None => Ok(InodeStatus::Found(inum)),
+        dev.read_block(DATA_REGION_BMP, &mut block_buf)?;
+        let data_map = Bitmap::parse(&block_buf);
+
+        dev.read_block(INODE_BMP, &mut block_buf)?;
+        let inode_allocs = Bitmap::parse(&block_buf);
+        let mut inodes = InodeGroup::open(inode_allocs);
+
+        for i in INODE_START..INODE_START + 5 {
+            dev.read_block(i, &mut block_buf)?;
+            // TODO(allancalix): This is a bit ugly. Because the inode group is unaware that's first
+            // disk block is at an offset (INODE_START) we have to subtract the offset before loading
+            // the block.
+            inodes.load_block((i - INODE_START) as u32, &block_buf);
         }
+
+        Ok(SFS {
+            dev,
+            inodes,
+            data_map,
+            super_block,
+        })
     }
 
     /// Opens a file descriptor at the path provided. By default, this implementation will return an
     /// error if the file does not exists. Set OpenMode to override the behavior and create a file or
     /// directory.
-    pub fn open_file<P: AsRef<Path>>(&self, path: P, mode: OpenMode) -> Result<u32, SFSError> {
+    pub fn open_file<P: AsRef<Path>>(&mut self, path: P, _mode: OpenMode) -> Result<u32, SFSError> {
         let mut parts = path.as_ref().components();
-        assert_eq!(
-            parts.next(),
-            Some(std::path::Component::RootDir),
-            "Path must begin with a leading slash - \"/\"."
-        );
-
-        let root = self.get_root();
-        let handle = self.get_handle(&mut parts, &root, 0).unwrap();
-        match handle {
-            InodeStatus::NotFound(i) => {
-                match mode {
-                    OpenMode::RO | OpenMode::RW | OpenMode::WO => Err(SFSError::DoesNotExist),
-                    OpenMode::CREATE => {
-                        let new_fd = Inode::default();
-                        let inum = self.inode_map.get_next_free();
-                        let parent_node = self.inodes.get(&i).unwrap();
-                        // Write handle to directory data block.
-                        // Write inode to block storage.
-                        unimplemented!()
-                    }
-                    OpenMode::DIRECTORY => unimplemented!(),
-                    // TODO(allancalix): The rest.
-                }
-            }
-            InodeStatus::Found(i) => Ok(i),
+        if Some(std::path::Component::RootDir) != parts.next() {
+            // TODO(allancalix): Throw a different error here, something invalid argument-y.
+            return Err(SFSError::DoesNotExist);
         }
-    }
 
-    pub fn open<P: AsRef<Path>>(disk: P, blocknr: usize) -> Result<Self, SFSError> {
-        let mut dev = T::open_disk(&disk, blocknr)?;
-        let mut block_buf = vec![0; 4096];
+        let mut inum = 0;
+        for part in parts {
+            let inode = self.inodes.get(inum).unwrap();
 
-        // Read superblock from first block;
-        dev.read_block(0, &mut block_buf)?;
-        let super_block = SuperBlock::parse(&block_buf, SB_MAGIC);
-
-        dev.read_block(1, &mut block_buf)?;
-        let data_map = Bitmap::parse(&block_buf);
-
-        dev.read_block(3, &mut block_buf)?;
-        let inode_map = Bitmap::parse(&block_buf);
-
-        Ok(SFS {
-            dev,
-            data_map,
-            inode_map,
-            super_block,
-            inodes: BTreeMap::new(),
-        })
-    }
-
-    fn prepare_sb() -> SuperBlock {
-        let mut sb = SuperBlock::new();
-        sb.sb_magic = SB_MAGIC;
-        // This is a limited implementation only supporting at most 80 file system
-        // objects (files or directories).
-        sb.inodes_count = 5 * (BLOCK_SIZE / NODE_SIZE) as u32;
-        // Use the remaining space for user data blocks.
-        sb.blocks_count = 56;
-        sb.reserved_blocks_count = 0;
-        sb.free_blocks_count = 0;
-        // All inodes are initially free.
-        sb.free_inodes_count = sb.inodes_count;
-        sb
+            unimplemented!();
+            // let content = self.read_inode(root);
+            // let next_node_index = search(content, part);
+            // if let None = next_node_idnex {
+            //   return Err(SFSError::DoesNotExist);
+            // }
+        }
+        Ok(inum)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::io::FileBlockEmulatorBuilder;
+    use crate::io::{FileBlockEmulator, FileBlockEmulatorBuilder};
+
+    fn create_test_device() -> FileBlockEmulator {
+        let dev = tempfile::tempfile().unwrap();
+        FileBlockEmulatorBuilder::from(dev)
+            .with_block_size(64)
+            .build()
+            .expect("Could not initialize disk emulator.")
+    }
 
     #[test]
     fn root_dir_returns_root_fd() {
-        let dev = tempfile::tempfile().unwrap();
-        let dev = FileBlockEmulatorBuilder::from(dev)
-            .with_block_size(64)
-            .build()
-            .expect("Could not initialize disk emulator.");
-
+        let dev = create_test_device();
         let mut fs = SFS::create(dev).unwrap();
         assert_eq!(fs.open_file("/", OpenMode::RO).unwrap(), 0);
     }
 
-    // #[test]
-    // fn file_not_found_with_create_returns_handle() {
-    //     let dev = tempfile::tempfile().unwrap();
-    //     let dev = FileBlockEmulatorBuilder::from(dev)
-    //         .with_block_size(64)
-    //         .build()
-    //         .expect("Could not initialize disk emulator.");
-    //
-    //     let mut fs = SFS::create(dev).unwrap();
-    //     assert_eq!(fs.open_file("/foo", OpenMode::CREATE).unwrap(), 1);
-    // }
-
     #[test]
-    #[should_panic]
-    fn inodes_not_including_data_return_none() {
-        let dev = tempfile::tempfile().unwrap();
-        let dev = FileBlockEmulatorBuilder::from(dev)
+    fn can_create_and_reopen_initialized_filesystem() {
+        let disk = tempfile::NamedTempFile::new().unwrap();
+        let dev = FileBlockEmulatorBuilder::from(disk.reopen().unwrap())
             .with_block_size(64)
             .build()
-            .expect("Could not initialize disk emulator.");
+            .unwrap();
+        // Initialize the filesystem.
+        SFS::create(dev).unwrap();
 
-        let mut fs = SFS::create(dev).unwrap();
-        fs.open_file("/foo/bar", OpenMode::RO).unwrap();
+        let dev = FileBlockEmulatorBuilder::from(disk.reopen().unwrap())
+            .with_block_size(64)
+            // Don't reset initialized disk.
+            .clear_medium(false)
+            .build()
+            .unwrap();
+        let fs: SFS<FileBlockEmulator> = SFS::open(dev, 64).unwrap();
+        assert_eq!(fs.inodes.total_nodes(), 1);
     }
+
+    // #[test]
+    // fn file_not_found_with_create_returns_handle() {
+    //       let dev = create_test_device();
+    //
+    //       let fs = SFS::create(dev).unwrap();
+    //       assert_eq!(fs.open_file("/foo", OpenMode::CREATE).unwrap(), 1);
+    //   }
+    //
+    //   #[test]
+    //   #[should_panic]
+    //   fn inodes_not_including_data_return_none() {
+    //       let dev = create_test_device();
+    //
+    //       let fs = SFS::create(dev).unwrap();
+    //       fs.open_file("/foo/bar", OpenMode::RO).unwrap();
+    //   }
 }
