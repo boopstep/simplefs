@@ -35,7 +35,7 @@ pub struct Inode {
     padding: [u32; 43],
     /// Pointers for the data blocks that belong to the file. Uses the remaining
     /// space the 256 inode space.
-    blocks: [u32; 15],
+    pub blocks: [u32; 15],
 }
 
 enum _InodeStatus {
@@ -105,7 +105,7 @@ impl InodeGroup {
         }
     }
 
-    pub fn get(&mut self, inum: u32) -> Option<&Inode> {
+    pub fn get(&self, inum: u32) -> Option<&Inode> {
         self.nodes.get(&inum)
     }
 

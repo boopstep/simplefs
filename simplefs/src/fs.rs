@@ -5,6 +5,8 @@ use crate::io::BlockStorage;
 use crate::node::InodeGroup;
 use crate::sb::SuperBlock;
 
+use std::collections::HashMap;
+use std::ffi::OsString;
 use thiserror::Error;
 
 const SB_MAGIC: u32 = 0x5346_5342; // SFSB
@@ -139,16 +141,52 @@ impl<T: BlockStorage> SFS<T> {
 
         let mut inum = 0;
         for part in parts {
-            let inode = self.inodes.get(inum).unwrap();
+            let content = self.read_dir(inum)?;
+            if content.get(part.as_os_str()).is_none() {
+                return Err(SFSError::DoesNotExist);
+            }
 
-            unimplemented!();
-            // let content = self.read_inode(root);
-            // let next_node_index = search(content, part);
-            // if let None = next_node_idnex {
-            //   return Err(SFSError::DoesNotExist);
-            // }
+            unimplemented!()
         }
         Ok(inum)
+    }
+
+    fn read_dir(&mut self, inum: u32) -> Result<HashMap<OsString, u32>, SFSError> {
+        let content = self.read_file(inum)?;
+        let contents_parsed = String::from_utf8(content).unwrap();
+
+        let mut dir_contents = HashMap::new();
+        for line in contents_parsed.lines() {
+            let mut contents = line.split(':');
+            let entry_inum = contents.next().unwrap().parse::<u32>().unwrap();
+            let entry_name = OsString::from(contents.next().unwrap());
+            dir_contents.insert(entry_name, entry_inum);
+        }
+
+        Ok(dir_contents)
+    }
+
+    fn read_file(&mut self, inum: u32) -> Result<Vec<u8>, SFSError> {
+        let node = self.inodes.get(inum);
+        if node.is_none() {
+            return Err(SFSError::DoesNotExist);
+        }
+        let allocated_blocks: Vec<u32> = node
+            .unwrap()
+            .blocks
+            .iter()
+            .filter(|block| *block > &8_u32)
+            .map(|u| *u)
+            .collect();
+
+        let mut content = vec![0; allocated_blocks.len()];
+        for (i, &block) in allocated_blocks.iter().enumerate() {
+            let start = i * BLOCK_SIZE;
+            let end = start + BLOCK_SIZE;
+            self.dev
+                .read_block(block as usize, &mut content[start..end])?;
+        }
+        Ok(content)
     }
 }
 
@@ -173,6 +211,27 @@ mod tests {
     }
 
     #[test]
+    fn file_not_found_without_create_returns_error() {
+        let dev = create_test_device();
+        let mut fs = SFS::create(dev).unwrap();
+
+        let result = fs.open_file("/foo", OpenMode::RO);
+        match result.unwrap_err() {
+            SFSError::DoesNotExist => (),
+            _ => assert!(false, "Unexpected error type."),
+        }
+    }
+
+    #[test]
+    fn file_not_found_with_create_returns_handle() {
+        let dev = create_test_device();
+
+        let mut fs = SFS::create(dev).unwrap();
+
+        assert_eq!(fs.open_file("/foo", OpenMode::CREATE).unwrap(), 1);
+    }
+
+    #[test]
     fn can_create_and_reopen_initialized_filesystem() {
         let disk = tempfile::NamedTempFile::new().unwrap();
         let dev = FileBlockEmulatorBuilder::from(disk.reopen().unwrap())
@@ -191,21 +250,4 @@ mod tests {
         let fs: SFS<FileBlockEmulator> = SFS::open(dev, 64).unwrap();
         assert_eq!(fs.inodes.total_nodes(), 1);
     }
-
-    // #[test]
-    // fn file_not_found_with_create_returns_handle() {
-    //       let dev = create_test_device();
-    //
-    //       let fs = SFS::create(dev).unwrap();
-    //       assert_eq!(fs.open_file("/foo", OpenMode::CREATE).unwrap(), 1);
-    //   }
-    //
-    //   #[test]
-    //   #[should_panic]
-    //   fn inodes_not_including_data_return_none() {
-    //       let dev = create_test_device();
-    //
-    //       let fs = SFS::create(dev).unwrap();
-    //       fs.open_file("/foo/bar", OpenMode::RO).unwrap();
-    //   }
 }
