@@ -1,5 +1,5 @@
 mod block;
-mod diskemu;
+mod file;
 
 pub(crate) use block::BlockStorage;
-pub use diskemu::{FileBlockEmulator, FileBlockEmulatorBuilder};
+pub use file::{FileBlockEmulator, FileBlockEmulatorBuilder};
