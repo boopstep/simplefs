@@ -99,7 +99,7 @@ impl<T: BlockStorage> SFS<T> {
         })
     }
 
-    pub fn open(mut dev: T, blocknr: usize) -> Result<Self, SFSError> {
+    pub fn open(mut dev: T) -> Result<Self, SFSError> {
         let mut block_buf = vec![0; 4096];
 
         // Read superblock from first block;
@@ -139,7 +139,7 @@ impl<T: BlockStorage> SFS<T> {
             return Err(SFSError::DoesNotExist);
         }
 
-        let mut inum = 0;
+        let inum = 0;
         for part in parts {
             let content = self.read_dir(inum)?;
             if content.get(part.as_os_str()).is_none() {
@@ -247,7 +247,7 @@ mod tests {
             .clear_medium(false)
             .build()
             .unwrap();
-        let fs: SFS<FileBlockEmulator> = SFS::open(dev, 64).unwrap();
+        let fs: SFS<FileBlockEmulator> = SFS::open(dev).unwrap();
         assert_eq!(fs.inodes.total_nodes(), 1);
     }
 }
