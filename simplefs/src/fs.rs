@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::alloc::Bitmap;
+use crate::alloc::{Bitmap, State};
 use crate::io::BlockStorage;
 use crate::node::InodeGroup;
 use crate::sb::SuperBlock;
@@ -132,7 +132,7 @@ impl<T: BlockStorage> SFS<T> {
     /// Opens a file descriptor at the path provided. By default, this implementation will return an
     /// error if the file does not exists. Set OpenMode to override the behavior and create a file or
     /// directory.
-    pub fn open_file<P: AsRef<Path>>(&mut self, path: P, _mode: OpenMode) -> Result<u32, SFSError> {
+    pub fn open_file<P: AsRef<Path>>(&mut self, path: P, mode: OpenMode) -> Result<u32, SFSError> {
         let mut parts = path.as_ref().components();
         if Some(std::path::Component::RootDir) != parts.next() {
             // TODO(allancalix): Throw a different error here, something invalid argument-y.
@@ -141,14 +141,83 @@ impl<T: BlockStorage> SFS<T> {
 
         let inum = 0;
         for part in parts {
-            let content = self.read_dir(inum)?;
+            let mut content = self.read_dir(inum)?;
             if content.get(part.as_os_str()).is_none() {
-                return Err(SFSError::DoesNotExist);
+                match mode {
+                    OpenMode::CREATE => {
+                        // A few things need to happen here.
+                        // 1. A new inode should be allocated and added to the map.
+                        // 2. The new inumber and part name should be written to the current
+                        //    directories content.
+                        let created_file = self.inodes.new_file();
+                        content.insert(OsString::from(part.as_os_str()), created_file);
+                        self.write_dir(inum, content)?;
+                        return Ok(created_file);
+                    },
+                    _ => {
+                        return Err(SFSError::DoesNotExist);
+                    },
+                }
             }
 
             unimplemented!()
         }
         Ok(inum)
+    }
+
+    // TODO(allancalix): Create real allocation policy.
+    fn next_free_data_block(&self) -> usize {
+        for block in 0..56 {
+            if let State::Free = self.data_map.get(block as usize) {
+                return block;
+            }
+        }
+        panic!("No data blocks left to allocate");
+    }
+
+    // TODO(allancalix): Still need to mark reserved nodes as such and update the inode with new
+    // blocks belonging to it.
+    fn write_dir(&mut self, dir: u32, entries: HashMap<OsString, u32>) -> Result<(), SFSError> {
+        let mut contents: String = entries
+            .iter()
+            .map(|(k, v)| format!("{}:{}\n", v, k.to_str().unwrap()))
+            .collect();
+        contents.push('\0');
+
+        let node = self.inodes.get(dir).unwrap();
+        let allocated_blocks: Vec<u32> = node
+            .blocks
+            .iter()
+            .filter(|block| *block > &8_u32)
+            .map(|u| *u)
+            .collect();
+        if allocated_blocks.len() < 1 + (contents.as_bytes().len() / BLOCK_SIZE) {
+            // TODO(allancalix): We'll have to allocate more blocks here, a problem for another day.
+            let needed = 1 + (contents.as_bytes().len() / BLOCK_SIZE);
+            let have = allocated_blocks.len();
+
+            // TODO(allancalix): WARNING - THERE IS A BUG HERE. Next free data block is a placeholder
+            // for an actual allocation policy. The current implementation returns the same values on
+            // repeated calls.
+            let new_blocks: Vec<u32> = (0..(needed - have)).map(|_| self.next_free_data_block() as u32).collect();
+            let mut all_blocks = allocated_blocks.iter().chain(new_blocks.iter());
+
+            unsafe {
+                contents.as_bytes_mut().chunks_mut(BLOCK_SIZE).for_each(|chunk| {
+                    self.dev.write_block(*all_blocks.next().unwrap() as usize, chunk).unwrap();
+                });
+            }
+            return Ok(())
+        }
+
+        println!("Writing content \"{}\" to dir inode {}.", contents, dir);
+        let mut blocks = allocated_blocks.iter();
+        unsafe {
+            contents.as_bytes_mut().chunks_mut(BLOCK_SIZE).for_each(|chunk| {
+                self.dev.write_block(*blocks.next().unwrap() as usize, chunk).unwrap();
+            });
+        }
+        Ok(())
     }
 
     fn read_dir(&mut self, inum: u32) -> Result<HashMap<OsString, u32>, SFSError> {

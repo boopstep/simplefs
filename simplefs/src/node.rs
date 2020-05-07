@@ -117,6 +117,19 @@ impl InodeGroup {
         self.nodes.len()
     }
 
+    /// Allocates a regular file Inode into the table and returns the new reserved node allocation
+    /// block index (i.e. the inumber). Panics if there is no space left to allocate another node.
+    pub fn new_file(&mut self) -> u32 {
+        for block in 0..NODES_PER_BLOCK * 5 {
+            if let State::Free = self.alloc_tracker.get(block as usize) {
+                let new_node = Inode::default();
+                self.insert(block, new_node);
+                return block;
+            }
+        }
+        panic!("No free space left to allocate nodes.")
+    }
+
     fn insert(&mut self, node_block: u32, node: Inode) -> usize {
         // TODO(allancalix): Allocation tracker needs write to disk on insert.
         self.alloc_tracker.set_reserved(node_block as usize);
@@ -159,7 +172,6 @@ impl InodeGroup {
 mod tests {
     use super::*;
     use crate::alloc::Bitmap;
-    use crate::io::FileBlockEmulatorBuilder;
 
     #[test]
     fn can_serialize_and_deserialize_inode() {
@@ -176,12 +188,6 @@ mod tests {
 
     #[test]
     fn can_retrieve_inserted_inode() {
-        let fd = tempfile::tempfile().unwrap();
-        let dev = FileBlockEmulatorBuilder::from(fd.try_clone().unwrap())
-            .with_block_size(64)
-            .build()
-            .expect("Could not initialize disk emulator.");
-
         let nodes_map = Bitmap::new();
         let mut group = InodeGroup::new(nodes_map);
         let mut node = Inode::default();
