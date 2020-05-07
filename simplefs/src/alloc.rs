@@ -57,6 +57,7 @@ impl Bitmap {
         self.bitmap[blocknr / 64] = outer_offset | mask;
     }
 
+    #[allow(dead_code)]
     pub fn set_free(&mut self, blocknr: usize) {
         assert!(blocknr < (4096 * 8 - 1));
         // Grab of the u64 containing the significant bit.

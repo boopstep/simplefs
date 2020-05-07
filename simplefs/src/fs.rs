@@ -76,17 +76,17 @@ impl<T: BlockStorage> SFS<T> {
 
         // Init SuperBlock header.
         let super_block = SuperBlock::default();
-        &block_buffer[0..28].copy_from_slice(super_block.serialize());
+        block_buffer[0..28].copy_from_slice(super_block.serialize());
         dev.write_block(SUPERBLOCK_INDEX, &mut block_buffer)?;
 
         // Init allocation map for data region.
         let data_map = Bitmap::new();
-        &block_buffer.copy_from_slice(data_map.serialize());
+        block_buffer.copy_from_slice(data_map.serialize());
         dev.write_block(DATA_REGION_BMP, &mut block_buffer)?;
 
         // Initialize inode structure with root node.
         let inodes = InodeGroup::new(Bitmap::new());
-        &block_buffer.copy_from_slice(inodes.allocations().serialize());
+        block_buffer.copy_from_slice(inodes.allocations().serialize());
         dev.write_block(INODE_BMP, &mut block_buffer)?;
         dev.write_block(INODE_START, &mut inodes.serialize_block(0))?;
         dev.sync_disk()?;
@@ -153,10 +153,10 @@ impl<T: BlockStorage> SFS<T> {
                         content.insert(OsString::from(part.as_os_str()), created_file);
                         self.write_dir(inum, content)?;
                         return Ok(created_file);
-                    },
+                    }
                     _ => {
                         return Err(SFSError::DoesNotExist);
-                    },
+                    }
                 }
             }
 
@@ -167,8 +167,9 @@ impl<T: BlockStorage> SFS<T> {
 
     // TODO(allancalix): Create real allocation policy.
     fn next_free_data_block(&self) -> usize {
-        for block in 0..56 {
-            if let State::Free = self.data_map.get(block as usize) {
+        for block in 0..self.super_block.blocks_count {
+            let block = block as usize;
+            if let State::Free = self.data_map.get(block) {
                 return block;
             }
         }
@@ -189,8 +190,9 @@ impl<T: BlockStorage> SFS<T> {
             .blocks
             .iter()
             .filter(|block| *block > &8_u32)
-            .map(|u| *u)
+            .copied()
             .collect();
+
         if allocated_blocks.len() < 1 + (contents.as_bytes().len() / BLOCK_SIZE) {
             // TODO(allancalix): We'll have to allocate more blocks here, a problem for another day.
             let needed = 1 + (contents.as_bytes().len() / BLOCK_SIZE);
@@ -199,23 +201,35 @@ impl<T: BlockStorage> SFS<T> {
             // TODO(allancalix): WARNING - THERE IS A BUG HERE. Next free data block is a placeholder
             // for an actual allocation policy. The current implementation returns the same values on
             // repeated calls.
-            let new_blocks: Vec<u32> = (0..(needed - have)).map(|_| self.next_free_data_block() as u32).collect();
+            let new_blocks: Vec<u32> = (0..(needed - have))
+                .map(|_| self.next_free_data_block() as u32)
+                .collect();
             let mut all_blocks = allocated_blocks.iter().chain(new_blocks.iter());
 
             unsafe {
-                contents.as_bytes_mut().chunks_mut(BLOCK_SIZE).for_each(|chunk| {
-                    self.dev.write_block(*all_blocks.next().unwrap() as usize, chunk).unwrap();
-                });
+                contents
+                    .as_bytes_mut()
+                    .chunks_mut(BLOCK_SIZE)
+                    .for_each(|chunk| {
+                        self.dev
+                            .write_block(*all_blocks.next().unwrap() as usize, chunk)
+                            .unwrap();
+                    });
             }
-            return Ok(())
+            return Ok(());
         }
 
         println!("Writing content \"{}\" to dir inode {}.", contents, dir);
         let mut blocks = allocated_blocks.iter();
         unsafe {
-            contents.as_bytes_mut().chunks_mut(BLOCK_SIZE).for_each(|chunk| {
-                self.dev.write_block(*blocks.next().unwrap() as usize, chunk).unwrap();
-            });
+            contents
+                .as_bytes_mut()
+                .chunks_mut(BLOCK_SIZE)
+                .for_each(|chunk| {
+                    self.dev
+                        .write_block(*blocks.next().unwrap() as usize, chunk)
+                        .unwrap();
+                });
         }
         Ok(())
     }
@@ -245,7 +259,7 @@ impl<T: BlockStorage> SFS<T> {
             .blocks
             .iter()
             .filter(|block| *block > &8_u32)
-            .map(|u| *u)
+            .copied()
             .collect();
 
         let mut content = vec![0; allocated_blocks.len()];

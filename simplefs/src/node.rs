@@ -77,7 +77,7 @@ impl Inode {
     }
 
     fn parse(buf: &[u8]) -> Self {
-        let inode = buf.clone().as_ptr() as *const Inode;
+        let inode = buf.as_ptr() as *const Inode;
         unsafe { *inode }
     }
 }
@@ -113,6 +113,7 @@ impl InodeGroup {
         &self.alloc_tracker
     }
 
+    #[allow(dead_code)] // Will need this at some point.
     pub fn total_nodes(&self) -> usize {
         self.nodes.len()
     }
@@ -160,7 +161,7 @@ impl InodeGroup {
         let offset = disk_block * NODES_PER_BLOCK;
         for (i, node) in self.nodes.range(offset..NODES_PER_BLOCK) {
             let node_offset = *i as usize * NODE_SIZE as usize;
-            &block_buf[node_offset..node_offset + NODE_SIZE as usize]
+            block_buf[node_offset..node_offset + NODE_SIZE as usize]
                 .copy_from_slice(node.as_bytes());
         }
 
