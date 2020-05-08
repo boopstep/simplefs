@@ -48,6 +48,8 @@ pub enum OpenMode {
 
 #[derive(Error, Debug)]
 pub enum SFSError {
+    #[error("invalid argument: {0}")]
+    InvalidArgument(String),
     #[error("found no file at path")]
     DoesNotExist,
     #[error("invalid file system block layout")]
@@ -135,8 +137,9 @@ impl<T: BlockStorage> SFS<T> {
     pub fn open_file<P: AsRef<Path>>(&mut self, path: P, mode: OpenMode) -> Result<u32, SFSError> {
         let mut parts = path.as_ref().components();
         if Some(std::path::Component::RootDir) != parts.next() {
-            // TODO(allancalix): Throw a different error here, something invalid argument-y.
-            return Err(SFSError::DoesNotExist);
+            return Err(SFSError::InvalidArgument(
+                "path must start with \"/\"".to_string(),
+            ));
         }
 
         let inum = 0;
@@ -194,16 +197,23 @@ impl<T: BlockStorage> SFS<T> {
             .collect();
 
         if allocated_blocks.len() < 1 + (contents.as_bytes().len() / BLOCK_SIZE) {
-            // TODO(allancalix): We'll have to allocate more blocks here, a problem for another day.
             let needed = 1 + (contents.as_bytes().len() / BLOCK_SIZE);
             let have = allocated_blocks.len();
 
             // TODO(allancalix): WARNING - THERE IS A BUG HERE. Next free data block is a placeholder
             // for an actual allocation policy. The current implementation returns the same values on
-            // repeated calls.
+            // repeated calls. Do not try and allocate more than one new block with this.
             let new_blocks: Vec<u32> = (0..(needed - have))
                 .map(|_| self.next_free_data_block() as u32)
                 .collect();
+            debug_assert!(
+                new_blocks.len() < 2,
+                "Temporary block until a real allocation policy is created."
+            );
+            // Mark new blocks as allocated.
+            for &new_block in new_blocks.iter() {
+                self.data_map.set_reserved(new_block as usize);
+            }
             let mut all_blocks = allocated_blocks.iter().chain(new_blocks.iter());
 
             unsafe {
