@@ -20,6 +20,43 @@ const DATA_REGION_BMP: usize = 1;
 const INODE_BMP: usize = 2;
 const INODE_START: usize = 3;
 
+/// Implements a naive block allocation policy for new data block requirements. This policy will
+/// retrieve the next available sequential block and on each call to the iterator will return the
+/// next consecutive available blocks.
+///
+/// ## Other Pre-Allocation Policies
+///
+/// 1. Allocation that attempts to find enough contiguous available blocks so data can be allocated
+///    close together (speed ups through sequential reads).
+/// 2. Allocation that attempts to spread randomly over blocks to prevent wear of physical devices
+///    in the front section (that may be rewritten many times before allocating to the back).
+struct NextAvailableAllocation {
+    /// Keeps track of the next starting place for looking for available blocks.
+    marker: usize,
+    /// A simple bitmap tracking which blocks are allocated and which are free.
+    bitmap: Bitmap,
+}
+
+impl NextAvailableAllocation {
+    fn new(bitmap: Bitmap) -> Self {
+        Self { marker: 0, bitmap }
+    }
+}
+
+impl Iterator for NextAvailableAllocation {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for i in self.marker..(BLOCK_SIZE / 8) {
+            if let State::Free = self.bitmap.get(i) {
+                self.marker += 1;
+                return Some(i);
+            }
+        }
+        None
+    }
+}
+
 impl Default for SuperBlock {
     fn default() -> Self {
         let mut sb = SuperBlock::new();
@@ -168,19 +205,7 @@ impl<T: BlockStorage> SFS<T> {
         Ok(inum)
     }
 
-    // TODO(allancalix): Create real allocation policy.
-    fn next_free_data_block(&self) -> usize {
-        for block in 0..self.super_block.blocks_count {
-            let block = block as usize;
-            if let State::Free = self.data_map.get(block) {
-                return block;
-            }
-        }
-        panic!("No data blocks left to allocate");
-    }
-
-    // TODO(allancalix): Still need to mark reserved nodes as such and update the inode with new
-    // blocks belonging to it.
+    // TODO(allancalix): Still need to update the inode with the blocks belonging to it.
     fn write_dir(&mut self, dir: u32, entries: HashMap<OsString, u32>) -> Result<(), SFSError> {
         let mut contents: String = entries
             .iter()
@@ -200,11 +225,10 @@ impl<T: BlockStorage> SFS<T> {
             let needed = 1 + (contents.as_bytes().len() / BLOCK_SIZE);
             let have = allocated_blocks.len();
 
-            // TODO(allancalix): WARNING - THERE IS A BUG HERE. Next free data block is a placeholder
-            // for an actual allocation policy. The current implementation returns the same values on
-            // repeated calls. Do not try and allocate more than one new block with this.
+            let mut alloc_gen = NextAvailableAllocation::new(self.data_map);
             let new_blocks: Vec<u32> = (0..(needed - have))
-                .map(|_| self.next_free_data_block() as u32)
+                // Panics if no free blocks are available.
+                .map(|_| alloc_gen.next().unwrap() as u32)
                 .collect();
             debug_assert!(
                 new_blocks.len() < 2,
