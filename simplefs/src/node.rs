@@ -109,6 +109,10 @@ impl InodeGroup {
         self.nodes.get(&inum)
     }
 
+    pub fn get_mut(&mut self, inum: u32) -> Option<&mut Inode> {
+        self.nodes.get_mut(&inum)
+    }
+
     pub fn allocations(&self) -> &Bitmap {
         &self.alloc_tracker
     }

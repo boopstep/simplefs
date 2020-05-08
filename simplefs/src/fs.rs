@@ -205,7 +205,6 @@ impl<T: BlockStorage> SFS<T> {
         Ok(inum)
     }
 
-    // TODO(allancalix): Still need to update the inode with the blocks belonging to it.
     fn write_dir(&mut self, dir: u32, entries: HashMap<OsString, u32>) -> Result<(), SFSError> {
         let mut contents: String = entries
             .iter()
@@ -213,7 +212,7 @@ impl<T: BlockStorage> SFS<T> {
             .collect();
         contents.push('\0');
 
-        let node = self.inodes.get(dir).unwrap();
+        let node = self.inodes.get_mut(dir).unwrap();
         let allocated_blocks: Vec<u32> = node
             .blocks
             .iter()
@@ -239,6 +238,14 @@ impl<T: BlockStorage> SFS<T> {
                 self.data_map.set_reserved(new_block as usize);
             }
             let mut all_blocks = allocated_blocks.iter().chain(new_blocks.iter());
+            // "copy_from_slice" requires that the slice being copied be equal to the length of the destination
+            // slice. Allocating this here since it's likely we only want to copy a subslice of elements,
+            // unless the node is completely saturated.
+            let mut new_blocks = vec![0; node.blocks.len()];
+            for (i, &num) in all_blocks.clone().enumerate() {
+                new_blocks[i] = num;
+            }
+            node.blocks.copy_from_slice(&new_blocks[0..15]);
 
             unsafe {
                 contents
@@ -292,7 +299,7 @@ impl<T: BlockStorage> SFS<T> {
             .unwrap()
             .blocks
             .iter()
-            .filter(|block| *block > &8_u32)
+            .filter(|block| *block > &(self.super_block.inodes_count + 3))
             .copied()
             .collect();
 
