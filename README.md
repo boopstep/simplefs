@@ -1,4 +1,5 @@
 # simplefs
+simply a file system
 
 ## Pre-requisites
 
