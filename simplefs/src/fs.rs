@@ -260,7 +260,7 @@ impl<T: BlockStorage> SFS<T> {
             return Ok(());
         }
 
-        println!("Writing content \"{}\" to dir inode {}.", contents, dir);
+        info!("Writing content \"{}\" to dir inode {}.", contents, dir);
         let mut blocks = allocated_blocks.iter();
         unsafe {
             contents
