@@ -130,7 +130,7 @@ impl InodeGroup {
         let inum = inum.unwrap() as u32;
         let new_node = Inode::default();
         self.insert(inum, new_node);
-        return inum;
+        inum
     }
     /// Loads a disk block of inodes into the in-memory tree.
     pub fn load_block(&mut self, disk_block: u32, block_buf: &[u8]) {
