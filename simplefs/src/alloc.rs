@@ -84,11 +84,19 @@ pub struct NextAvailableAllocation {
     marker: usize,
     /// A simple bitmap tracking which blocks are allocated and which are free.
     bitmap: Bitmap,
+    /// The maximum allocatable value available in hardware. For example, if you have 80 inode blocks
+    /// available on disk, this value would be 80.
+    cap: usize,
 }
 
 impl NextAvailableAllocation {
-    pub fn new(bitmap: Bitmap) -> Self {
-        Self { marker: 0, bitmap }
+    pub fn new(bitmap: Bitmap, cap: Option<usize>) -> Self {
+        let cap = cap.unwrap_or_else(|| BLOCK_SIZE / 8);
+        Self {
+            marker: 0,
+            bitmap,
+            cap,
+        }
     }
 }
 
@@ -96,7 +104,7 @@ impl Iterator for NextAvailableAllocation {
     type Item = usize;
 
     fn next(&mut self) -> Option<Self::Item> {
-        for i in self.marker..(BLOCK_SIZE / 8) {
+        for i in self.marker..self.cap {
             if let State::Free = self.bitmap.get(i) {
                 self.marker += 1;
                 return Some(i);

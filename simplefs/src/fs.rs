@@ -187,7 +187,7 @@ impl<T: BlockStorage> SFS<T> {
             let needed = 1 + (contents.as_bytes().len() / BLOCK_SIZE);
             let have = allocated_blocks.len();
 
-            let mut alloc_gen = NextAvailableAllocation::new(self.data_map);
+            let mut alloc_gen = NextAvailableAllocation::new(self.data_map, None);
             let new_blocks: Vec<u32> = (0..(needed - have))
                 // Panics if no free blocks are available.
                 .map(|_| alloc_gen.next().unwrap() as u32)
