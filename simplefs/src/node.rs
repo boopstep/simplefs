@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use crate::alloc::{Bitmap, State};
+use crate::alloc::{Bitmap, State, NextAvailableAllocation};
 
 use zerocopy::{AsBytes, FromBytes};
 
@@ -125,14 +125,20 @@ impl InodeGroup {
     /// Allocates a regular file Inode into the table and returns the new reserved node allocation
     /// block index (i.e. the inumber). Panics if there is no space left to allocate another node.
     pub fn new_file(&mut self) -> u32 {
-        for block in 0..NODES_PER_BLOCK * 5 {
-            if let State::Free = self.alloc_tracker.get(block as usize) {
-                let new_node = Inode::default();
-                self.insert(block, new_node);
-                return block;
-            }
+        let mut alloc_gen = NextAvailableAllocation::new(self.alloc_tracker);
+        let inum = alloc_gen.next();
+        if inum.is_none() {
+            panic!("No free space left to allocate nodes.")
         }
-        panic!("No free space left to allocate nodes.")
+
+        let max_inodes = NODES_PER_BLOCK * 5;
+        let inum = inum.unwrap() as u32;
+        // TODO(allancalix): This is a temporary hack because the bitmap _and_ the allocation policies
+        // aren't currently aware of the maximum boundaries of their allocation space.
+        assert!(inum < max_inodes);
+        let new_node = Inode::default();
+        self.insert(inum, new_node);
+        return inum;
     }
 
     fn insert(&mut self, node_block: u32, node: Inode) -> usize {
