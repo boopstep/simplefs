@@ -346,6 +346,7 @@ name = "simplefs"
 version = "0.1.0"
 dependencies = [
  "log",
+ "simplefs-fuse",
  "tempfile",
  "thiserror",
  "zerocopy",
