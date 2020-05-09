@@ -38,13 +38,6 @@ pub struct Inode {
     pub blocks: [u32; 15],
 }
 
-enum _InodeStatus {
-    /// The entity requested exists.
-    _Found(u32),
-    /// The parent handle if traversal finds parent directory but not terminal entity.
-    _NotFound(u32),
-}
-
 impl Inode {
     fn root() -> Self {
         Self {
@@ -139,18 +132,6 @@ impl InodeGroup {
         self.insert(inum, new_node);
         return inum;
     }
-
-    fn insert(&mut self, node_block: u32, node: Inode) -> usize {
-        // TODO(allancalix): Allocation tracker needs write to disk on insert.
-        self.alloc_tracker.set_reserved(node_block as usize);
-        self.nodes.insert(node_block, node);
-        self.get_disk_block(node_block)
-    }
-
-    fn get_disk_block(&self, node_block: u32) -> usize {
-        (node_block / NODES_PER_BLOCK) as usize
-    }
-
     /// Loads a disk block of inodes into the in-memory tree.
     pub fn load_block(&mut self, disk_block: u32, block_buf: &[u8]) {
         let block_start = disk_block * NODES_PER_BLOCK;
@@ -175,6 +156,17 @@ impl InodeGroup {
         }
 
         block_buf
+    }
+
+    fn insert(&mut self, node_block: u32, node: Inode) -> usize {
+        // TODO(allancalix): Allocation tracker needs write to disk on insert.
+        self.alloc_tracker.set_reserved(node_block as usize);
+        self.nodes.insert(node_block, node);
+        self.get_disk_block(node_block)
+    }
+
+    fn get_disk_block(&self, node_block: u32) -> usize {
+        (node_block / NODES_PER_BLOCK) as usize
     }
 }
 
