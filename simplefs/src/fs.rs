@@ -146,19 +146,15 @@ impl<T: BlockStorage> SFS<T> {
         for part in parts {
             let mut content = self.read_dir(inum)?;
             if content.get(part.as_os_str()).is_none() {
-                match mode {
+                return match mode {
                     OpenMode::CREATE => {
-                        // A few things need to happen here.
-                        // 1. A new inode should be allocated and added to the map.
-                        // 2. The new inumber and part name should be written to the current
-                        //    directories content.
                         let created_file = self.inodes.new_file();
                         content.insert(OsString::from(part.as_os_str()), created_file);
                         self.write_dir(inum, content)?;
-                        return Ok(created_file);
+                        Ok(created_file)
                     }
                     _ => {
-                        return Err(SFSError::DoesNotExist);
+                        Err(SFSError::DoesNotExist)
                     }
                 }
             }
