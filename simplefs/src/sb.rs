@@ -48,13 +48,13 @@ impl SuperBlock {
 
         unsafe {
             assert_eq!(magic, (*sb).sb_magic, "Superblock magic constant invalid.");
-            SuperBlock::from(*sb)
+            *sb
         }
     }
 
     /// Serializes the superblock into a series of bytes that can be sent or
     /// deserialized back into a SuperBlock;
-    pub fn serialize<'a>(&'a self) -> &'a [u8] {
+    pub fn serialize(&self) -> &[u8] {
         self.as_bytes()
     }
 }

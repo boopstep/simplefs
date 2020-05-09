@@ -57,6 +57,7 @@ impl Bitmap {
         self.bitmap[blocknr / 64] = outer_offset | mask;
     }
 
+    #[allow(dead_code)]
     pub fn set_free(&mut self, blocknr: usize) {
         assert!(blocknr < (4096 * 8 - 1));
         // Grab of the u64 containing the significant bit.
@@ -65,6 +66,51 @@ impl Bitmap {
         let inner_offset = blocknr % 64;
         let mask = 0b00_u64 << inner_offset;
         self.bitmap[blocknr / 64] = outer_offset & mask;
+    }
+}
+
+/// Implements a naive block allocation policy for new data block requirements. This policy will
+/// retrieve the next available sequential block and on each call to the iterator will return the
+/// next consecutive available blocks.
+///
+/// ## Other Pre-Allocation Policies
+///
+/// 1. Allocation that attempts to find enough contiguous available blocks so data can be allocated
+///    close together (speed ups through sequential reads).
+/// 2. Allocation that attempts to spread randomly over blocks to prevent wear of physical devices
+///    in the front section (that may be rewritten many times before allocating to the back).
+pub struct NextAvailableAllocation {
+    /// Keeps track of the next starting place for looking for available blocks.
+    marker: usize,
+    /// A simple bitmap tracking which blocks are allocated and which are free.
+    bitmap: Bitmap,
+    /// The maximum allocatable value available in hardware. For example, if you have 80 inode blocks
+    /// available on disk, this value would be 80.
+    cap: usize,
+}
+
+impl NextAvailableAllocation {
+    pub fn new(bitmap: Bitmap, cap: Option<usize>) -> Self {
+        let cap = cap.unwrap_or_else(|| BLOCK_SIZE / 8);
+        Self {
+            marker: 0,
+            bitmap,
+            cap,
+        }
+    }
+}
+
+impl Iterator for NextAvailableAllocation {
+    type Item = usize;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        for i in self.marker..self.cap {
+            if let State::Free = self.bitmap.get(i) {
+                self.marker += 1;
+                return Some(i);
+            }
+        }
+        None
     }
 }
 

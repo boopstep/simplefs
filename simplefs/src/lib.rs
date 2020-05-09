@@ -1,7 +1,10 @@
+#[macro_use]
+extern crate log;
+
 mod alloc;
 mod fs;
-mod io;
+pub mod io;
+mod node;
 mod sb;
 
 pub use fs::SFS;
-pub use io::{FileBlockEmulator, FileBlockEmulatorBuilder};
