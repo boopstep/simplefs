@@ -101,7 +101,7 @@ impl<T: BlockStorage> SFS<T> {
         })
     }
 
-    pub fn open(mut dev: T) -> Result<Self, SFSError> {
+    pub fn from_block_storage(mut dev: T) -> Result<Self, SFSError> {
         let mut block_buf = vec![0; 4096];
 
         // Read superblock from first block;
@@ -134,7 +134,7 @@ impl<T: BlockStorage> SFS<T> {
     /// Opens a file descriptor at the path provided. By default, this implementation will return an
     /// error if the file does not exists. Set OpenMode to override the behavior and create a file or
     /// directory.
-    pub fn open_file<P: AsRef<Path>>(&mut self, path: P, mode: OpenMode) -> Result<u32, SFSError> {
+    pub fn open<P: AsRef<Path>>(&mut self, path: P, mode: OpenMode) -> Result<u32, SFSError> {
         let mut parts = path.as_ref().components();
         if Some(std::path::Component::RootDir) != parts.next() {
             return Err(SFSError::InvalidArgument(
@@ -153,10 +153,8 @@ impl<T: BlockStorage> SFS<T> {
                         self.write_dir(inum, content)?;
                         Ok(created_file)
                     }
-                    _ => {
-                        Err(SFSError::DoesNotExist)
-                    }
-                }
+                    _ => Err(SFSError::DoesNotExist),
+                };
             }
 
             unimplemented!()
@@ -280,7 +278,7 @@ mod tests {
     fn root_dir_returns_root_fd() {
         let dev = create_test_device();
         let mut fs = SFS::create(dev).unwrap();
-        assert_eq!(fs.open_file("/", OpenMode::RO).unwrap(), 0);
+        assert_eq!(fs.open("/", OpenMode::RO).unwrap(), 0);
     }
 
     #[test]
@@ -288,7 +286,7 @@ mod tests {
         let dev = create_test_device();
         let mut fs = SFS::create(dev).unwrap();
 
-        let result = fs.open_file("/foo", OpenMode::RO);
+        let result = fs.open("/foo", OpenMode::RO);
         match result.unwrap_err() {
             SFSError::DoesNotExist => (),
             _ => assert!(false, "Unexpected error type."),
@@ -296,12 +294,12 @@ mod tests {
     }
 
     #[test]
-    fn file_not_found_with_create_returns_handle() {
+    fn create_non_existent_file_returns_handle() {
         let dev = create_test_device();
 
         let mut fs = SFS::create(dev).unwrap();
 
-        assert_eq!(fs.open_file("/foo", OpenMode::CREATE).unwrap(), 1);
+        assert_eq!(fs.open("/foo", OpenMode::CREATE).unwrap(), 1);
     }
 
     #[test]
@@ -320,7 +318,7 @@ mod tests {
             .clear_medium(false)
             .build()
             .unwrap();
-        let fs: SFS<FileBlockEmulator> = SFS::open(dev).unwrap();
+        let fs: SFS<FileBlockEmulator> = SFS::from_block_storage(dev).unwrap();
         assert_eq!(fs.inodes.total_nodes(), 1);
     }
 }
