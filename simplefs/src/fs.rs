@@ -55,6 +55,7 @@ pub enum SFSError {
     #[error("invalid file system block layout")]
     InvalidBlock(#[from] std::io::Error),
 }
+
 /// A fixed 64 4k block file system. Currently hard coded for simplicity with
 /// one super block, one inode bitmap, one data block bitmap, five inode blocks,
 /// and 56 blocks for data storage.
@@ -142,24 +143,41 @@ impl<T: BlockStorage> SFS<T> {
             ));
         }
 
-        let inum = 0;
-        for part in parts {
-            let mut content = self.read_dir(inum)?;
-            if content.get(part.as_os_str()).is_none() {
-                return match mode {
-                    OpenMode::CREATE => {
-                        let created_file = self.inodes.new_file();
-                        content.insert(OsString::from(part.as_os_str()), created_file);
-                        self.write_dir(inum, content)?;
-                        Ok(created_file)
-                    }
-                    _ => Err(SFSError::DoesNotExist),
-                };
+        let mut inum = 0;
+        while let Some(part) = parts.next() {
+            let content = self.read_dir(inum)?;
+            let node = content.get(part.as_os_str());
+            if node.is_none() {
+                if parts.peekable().peek().is_some() {
+                    return Err(SFSError::InvalidArgument(
+                        "Missing subdirectory in path.".to_string(),
+                    ));
+                }
+
+                match mode {
+                    OpenMode::CREATE => break,
+                    _ => return Err(SFSError::DoesNotExist),
+                }
             }
 
-            unimplemented!()
+            inum = *node.unwrap();
         }
-        Ok(inum)
+
+        match mode {
+            OpenMode::CREATE => {
+                let created_file = self.inodes.new_file();
+                let mut parent_dir = self.read_dir(inum)?;
+                parent_dir.insert(
+                    OsString::from(path.as_ref().file_name().unwrap()),
+                    created_file,
+                );
+                self.write_dir(inum, parent_dir)?;
+                Ok(created_file)
+            }
+            OpenMode::RO => Ok(inum),
+            // The rest of the modes.
+            _ => unimplemented!(),
+        }
     }
 
     fn write_dir(&mut self, dir: u32, entries: HashMap<OsString, u32>) -> Result<(), SFSError> {
@@ -300,6 +318,15 @@ mod tests {
         let mut fs = SFS::create(dev).unwrap();
 
         assert_eq!(fs.open("/foo", OpenMode::CREATE).unwrap(), 1);
+    }
+
+    #[test]
+    fn create_non_existent_file_with_missing_subdirectory_returns_error() {
+        let dev = create_test_device();
+
+        let mut fs = SFS::create(dev).unwrap();
+
+        assert!(fs.open("/foo/bar", OpenMode::CREATE).is_err());
     }
 
     #[test]
