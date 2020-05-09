@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::alloc::{Bitmap, State};
+use crate::alloc::{Bitmap, NextAvailableAllocation};
 use crate::io::BlockStorage;
 use crate::node::InodeGroup;
 use crate::sb::SuperBlock;
@@ -19,43 +19,6 @@ const SUPERBLOCK_INDEX: usize = 0;
 const DATA_REGION_BMP: usize = 1;
 const INODE_BMP: usize = 2;
 const INODE_START: usize = 3;
-
-/// Implements a naive block allocation policy for new data block requirements. This policy will
-/// retrieve the next available sequential block and on each call to the iterator will return the
-/// next consecutive available blocks.
-///
-/// ## Other Pre-Allocation Policies
-///
-/// 1. Allocation that attempts to find enough contiguous available blocks so data can be allocated
-///    close together (speed ups through sequential reads).
-/// 2. Allocation that attempts to spread randomly over blocks to prevent wear of physical devices
-///    in the front section (that may be rewritten many times before allocating to the back).
-struct NextAvailableAllocation {
-    /// Keeps track of the next starting place for looking for available blocks.
-    marker: usize,
-    /// A simple bitmap tracking which blocks are allocated and which are free.
-    bitmap: Bitmap,
-}
-
-impl NextAvailableAllocation {
-    fn new(bitmap: Bitmap) -> Self {
-        Self { marker: 0, bitmap }
-    }
-}
-
-impl Iterator for NextAvailableAllocation {
-    type Item = usize;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        for i in self.marker..(BLOCK_SIZE / 8) {
-            if let State::Free = self.bitmap.get(i) {
-                self.marker += 1;
-                return Some(i);
-            }
-        }
-        None
-    }
-}
 
 impl Default for SuperBlock {
     fn default() -> Self {
