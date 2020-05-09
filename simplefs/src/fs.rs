@@ -234,14 +234,8 @@ impl<T: BlockStorage> SFS<T> {
                 self.data_map.set_reserved(new_block as usize);
             }
             let mut all_blocks = allocated_blocks.iter().chain(new_blocks.iter());
-            // "copy_from_slice" requires that the slice being copied be equal to the length of the destination
-            // slice. Allocating this here since it's likely we only want to copy a subslice of elements,
-            // unless the node is completely saturated.
-            let mut new_blocks = vec![0; node.blocks.len()];
-            for (i, &num) in all_blocks.clone().enumerate() {
-                new_blocks[i] = num;
-            }
-            node.blocks.copy_from_slice(&new_blocks[0..15]);
+            let new_blocks = all_blocks.clone().copied().collect::<Vec<u32>>();
+            node.blocks[0..new_blocks.len()].copy_from_slice(&new_blocks);
 
             unsafe {
                 contents
