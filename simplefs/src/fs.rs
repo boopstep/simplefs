@@ -229,10 +229,6 @@ impl<T: BlockStorage> SFS<T> {
                 // Panics if no free blocks are available.
                 .map(|_| alloc_gen.next().unwrap() as u32)
                 .collect();
-            debug_assert!(
-                new_blocks.len() < 2,
-                "Temporary block until a real allocation policy is created."
-            );
             // Mark new blocks as allocated.
             for &new_block in new_blocks.iter() {
                 self.data_map.set_reserved(new_block as usize);
