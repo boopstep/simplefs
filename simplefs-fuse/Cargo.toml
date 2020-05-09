@@ -1,10 +1,15 @@
 [package]
 name = "simplefs-fuse"
 version = "0.1.0"
+authors = ["jafow <jared.a.fowler@gmail.com>"]
 edition = "2018"
-authors = ["Allan Calix <contact@allancalix.com>"]
 build = "build.rs"
-links = "fuse,fuse3"
+links = "fuse"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [build-dependencies]
 pkg-config = "0.3.17"
+bindgen = "0.53.2"
+
+[dependencies]

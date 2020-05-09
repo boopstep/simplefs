@@ -12,4 +12,3 @@ on debian
 ```bash
 sudo apt-get install libfuse-dev pkg-config
 ```
-
