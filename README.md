@@ -12,3 +12,10 @@ on debian
 ```bash
 sudo apt-get install libfuse-dev pkg-config gcc llvm libclang-dev clang
 ```
+
+## Example
+run file block emulator and fs open example
+
+```bash
+cargo run -p simplefs --example emu
+```
