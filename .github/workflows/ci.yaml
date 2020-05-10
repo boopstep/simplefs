@@ -10,7 +10,8 @@ on:
       - synchronize
       - reopened
     branches:
-      - *
+      - jafow:*
+      - allancalix:*
 jobs:
   test:
     name: test
