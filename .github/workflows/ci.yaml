@@ -1,19 +1,5 @@
 name: ci
-on:
-  push:
-    branches:
-    - master
-  pull_request:
-    branches:
-    - master
-    - feature/*
-    - fix/*
-    - ci
-    types:
-    - opened
-    - edited
-    - synchronize
-    - reopened
+on: [push, pull_request]
 jobs:
   test:
     name: test
@@ -28,6 +14,7 @@ jobs:
           - 1.39.0
           - stable
           - nightly
+
     steps:
     - name: install dependencies
       if: startsWith(matrix.os, 'ubuntu')
