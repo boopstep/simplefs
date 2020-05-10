@@ -1,6 +1,6 @@
 name: ci
 on:
-  pull_request:
+  - pull_request:
     types: ["opened", "edited", "synchronize", "reopened"]
     branches: 
       - master
@@ -10,7 +10,7 @@ on:
 jobs:
   test:
     name: test
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
@@ -29,6 +29,7 @@ jobs:
     - name: Install FUSE (macOS)
       if: startsWith(matrix.os, 'macos')
       run: brew update && brew install pkg-config && brew tap homebrew/cask && brew cask install osxfuse
+    - name: checkout
     - uses: actions/checkout@v2
     - uses: actions-rs/toolchain@v1
       with:
