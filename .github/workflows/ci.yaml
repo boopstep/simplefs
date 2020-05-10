@@ -2,13 +2,15 @@ name: ci
 on:
   push:
     branches:
-      - master
+    - master
   pull_request:
+    branches:
+    - master
     types:
-      - opened
-      - edited
-      - synchronize
-      - reopened
+    - opened
+    - edited
+    - synchronize
+    - reopened
 jobs:
   test:
     name: test
