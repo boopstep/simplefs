@@ -1,14 +1,30 @@
 name: ci
 on:
-  pull_request:
-    types: ["opened", "edited", "synchronize", "reopened"]
   push:
     branches:
     - master
+  pull_request:
+    branches:
+    - master
+    types:
+    - opened
+    - edited
+    - synchronize
+    - reopened
 jobs:
   test:
     name: test
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+        rust:
+          - 1.39.0
+          - stable
+          - nightly
     steps:
     - name: install dependencies
       if: startsWith(matrix.os, 'ubuntu')
