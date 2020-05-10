@@ -3,6 +3,7 @@
 #![allow(non_snake_case)]
 
 mod raw {
+    #![allow(dead_code)]
     include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 }
 
