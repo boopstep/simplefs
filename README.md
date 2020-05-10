@@ -19,3 +19,10 @@ run file block emulator and fs open example
 ```bash
 cargo run -p simplefs --example emu
 ```
+
+## Example
+run file block emulator and fs open example
+
+```bash
+cargo run -p simplefs --example emu
+```
