@@ -9,9 +9,6 @@ on:
       - edited
       - synchronize
       - reopened
-    branches:
-      - jafow:*
-      - allancalix:*
 jobs:
   test:
     name: test
