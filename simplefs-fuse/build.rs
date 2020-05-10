@@ -19,7 +19,10 @@ pub fn main() {
        .generate()
        .expect("Could not generate bindings");
 
-   let out = PathBuf::from(env::var("OUT_DIR").unwrap());
+   let out = match env::var("OUT_DIR") {
+       Ok(val) => PathBuf::from(val),
+       _ => PathBuf::from(".")
+   };
 
    // write to bindings.rs
    bindings.write_to_file(out.join("bindings.rs"))
