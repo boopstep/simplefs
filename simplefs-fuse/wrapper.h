@@ -1,2 +1,9 @@
 #define _FILE_OFFSET_BITS  64
-#include <fuse.h>
+// Required to load up-to-date headers for MacOS.
+#define FUSE_USE_VERSION 26
+
+#ifdef __APPLE__
+  #include <osxfuse/fuse.h>
+#else
+  #include <fuse/fuse.h>
+#endif
