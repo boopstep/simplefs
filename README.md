@@ -10,5 +10,5 @@ v2.9+
 
 on debian
 ```bash
-sudo apt-get install libfuse-dev pkg-config
+sudo apt-get install libfuse-dev pkg-config gcc llvm libclang-dev clang
 ```
