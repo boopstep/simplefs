@@ -1,7 +1,16 @@
 name: ci
 on:
-  - pull_request
-  - push
+  push:
+    branches:
+      - master
+  pull_request:
+    types:
+      - opened
+      - edited
+      - synchronize
+      - reopened
+    branches:
+      - *
 jobs:
   test:
     name: test
