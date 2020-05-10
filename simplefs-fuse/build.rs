@@ -4,14 +4,20 @@ extern crate pkg_config;
 use std::env;
 use std::path::PathBuf;
 
+#[cfg(not(target_os = "macos"))]
+const LIBFUSE_NAME: &str = "fuse";
+
+#[cfg(target_os = "macos")]
+const LIBFUSE_NAME: &str = "osxfuse";
+
 
 pub fn main() {
    // link to the fuse lib 
-   println!("cargo:rustc-link-lib=dylib=fuse");
+   println!("cargo:rustc-link-lib=dylib={}", LIBFUSE_NAME);
 
    // rebuild wrapper when needed
    println!("cargo:rerun-if-changed=wrapper.h");
-   pkg_config::Config::new().atleast_version("2.9.6").probe("fuse").unwrap();
+   pkg_config::Config::new().atleast_version("2.9.6").probe(LIBFUSE_NAME).unwrap();
 
    let bindings = bindgen::Builder::default()
        .header("wrapper.h")

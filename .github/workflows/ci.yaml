@@ -11,13 +11,28 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os:
+          - ubuntu-latest
+          - macos-latest
+        rust:
+          - 1.39.0
+          - stable
+          - nightly
+
     steps:
-    - name: install
+    - name: install dependencies
+      if: startsWith(matrix.os, 'ubuntu')
       run: sudo apt-get update && sudo apt-get install -yq libfuse-dev pkg-config
+    - name: Install FUSE (macOS)
+      if: startsWith(matrix.os, 'macos')
+      run: brew update && brew install pkg-config && brew tap homebrew/cask && brew cask install osxfuse
     - uses: actions/checkout@v2
     - uses: actions-rs/toolchain@v1
       with:
-        toolchain: stable
+        toolchain: ${{ matrix.rust }}
         override: true
     - uses: actions-rs/cargo@v1
       with:
