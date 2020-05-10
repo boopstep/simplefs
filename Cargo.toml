@@ -1,8 +1,5 @@
 [workspace]
 members = [
   "simplefs",
-  "simplefs-fuse",
-
-  # Private crates
-  "examples",
+  "simplefs-fuse"
 ]
